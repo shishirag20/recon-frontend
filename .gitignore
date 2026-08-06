@@ -22,3 +22,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Environment & local settings
+.env.development
+.env*.local
+
+# Agents configuration
+.agents/
+
