@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Modal } from '../layout/Modal';
+import { UploadDropzone } from './UploadDropzone';
 import { DATA_HUB_CATEGORIES } from '../../types';
 import {
   X,
@@ -9,6 +10,7 @@ import {
   FileText,
   Zap,
   Users,
+  ArrowLeft,
   ChevronRight,
 } from 'lucide-react';
 
@@ -62,27 +64,41 @@ export const IngestJobModal: React.FC<IngestJobModalProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
+  const handleClose = () => {
+    setActiveCategory(null);
+    onClose();
+  };
+
   const handleCardClick = (category: string) => {
     setActiveCategory(category);
-    // Immediately trigger OS file chooser dialog on card click
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-      fileInputRef.current.click();
-    }
+    // Trigger OS file chooser on next tick when category view updates
+    setTimeout(() => {
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+        fileInputRef.current.click();
+      }
+    }, 50);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && activeCategory) {
       onFileUploaded(file, activeCategory);
-      onClose();
+      handleClose();
+    }
+  };
+
+  const handleDropzoneFileSelect = (file: File) => {
+    if (activeCategory) {
+      onFileUploaded(file, activeCategory);
+      handleClose();
     }
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} width="2xl">
+    <Modal isOpen={isOpen} onClose={handleClose} width="2xl">
       <div className="p-6 flex flex-col gap-5 text-xs">
-        {/* Hidden File Input */}
+        {/* Hidden File Input for Native File Chooser */}
         <input
           ref={fileInputRef}
           type="file"
@@ -93,17 +109,30 @@ export const IngestJobModal: React.FC<IngestJobModalProps> = ({
 
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-          <div>
-            <h2 className="text-base font-bold text-slate-900">
-              Ingest New Job
-            </h2>
-            <p className="text-slate-500 mt-0.5">
-              Select a target source category to immediately choose and upload your statement file
-            </p>
+          <div className="flex items-center gap-2">
+            {activeCategory && (
+              <button
+                onClick={() => setActiveCategory(null)}
+                className="text-slate-400 hover:text-slate-700 p-1 rounded-md hover:bg-slate-100 mr-1 transition-colors"
+                title="Change source category"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+            )}
+            <div>
+              <h2 className="text-base font-bold text-slate-900">
+                Ingest New Job
+              </h2>
+              <p className="text-slate-500 mt-0.5">
+                {activeCategory
+                  ? `Upload statement file for ${activeCategory}`
+                  : 'Select a target source category to choose and upload your file'}
+              </p>
+            </div>
           </div>
 
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="text-slate-400 hover:text-slate-700 p-1 rounded-md hover:bg-slate-100"
             aria-label="Close modal"
           >
@@ -111,41 +140,67 @@ export const IngestJobModal: React.FC<IngestJobModalProps> = ({
           </button>
         </div>
 
-        {/* Category Cards Grid (Clicking any card immediately triggers file upload) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 my-2">
-          {DATA_HUB_CATEGORIES.map((cat) => {
-            const meta = CATEGORY_META[cat] || {
-              icon: Landmark,
-              description: `Ingest statement into ${cat}`,
-              color: 'bg-slate-50 text-slate-600 border-slate-200',
-            };
-            const IconComp = meta.icon;
+        {/* View State 1: Category Cards Grid */}
+        {!activeCategory ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 my-2">
+            {DATA_HUB_CATEGORIES.map((cat) => {
+              const meta = CATEGORY_META[cat] || {
+                icon: Landmark,
+                description: `Ingest statement into ${cat}`,
+                color: 'bg-slate-50 text-slate-600 border-slate-200',
+              };
+              const IconComp = meta.icon;
 
-            return (
-              <div
-                key={cat}
-                onClick={() => handleCardClick(cat)}
-                className="group bg-white border border-slate-200 hover:border-indigo-600 hover:shadow-md p-4 rounded-xl cursor-pointer transition-all duration-150 flex items-start gap-3.5"
-              >
-                <div className={`p-2.5 rounded-lg border flex-none ${meta.color}`}>
-                  <IconComp className="w-5 h-5" />
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-bold text-slate-900 group-hover:text-indigo-600 transition-colors text-sm">
-                      {cat}
-                    </h3>
-                    <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-indigo-600 transition-colors flex-none" />
+              return (
+                <div
+                  key={cat}
+                  onClick={() => handleCardClick(cat)}
+                  className="group bg-white border border-slate-200 hover:border-indigo-600 hover:shadow-md p-4 rounded-xl cursor-pointer transition-all duration-150 flex items-start gap-3.5"
+                >
+                  <div className={`p-2.5 rounded-lg border flex-none ${meta.color}`}>
+                    <IconComp className="w-5 h-5" />
                   </div>
-                  <p className="text-slate-500 mt-1 leading-relaxed text-[11.5px]">
-                    {meta.description}
-                  </p>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-bold text-slate-900 group-hover:text-indigo-600 transition-colors text-sm">
+                        {cat}
+                      </h3>
+                      <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-indigo-600 transition-colors flex-none" />
+                    </div>
+                    <p className="text-slate-500 mt-1 leading-relaxed text-[11.5px]">
+                      {meta.description}
+                    </p>
+                  </div>
                 </div>
+              );
+            })}
+          </div>
+        ) : (
+          /* View State 2: Upload Dropzone for Active Category */
+          <div className="flex flex-col gap-4 py-2 fade-in">
+            <div className="bg-slate-50 border border-slate-200 p-3 rounded-lg flex items-center justify-between">
+              <span className="font-medium text-slate-700">Target Category:</span>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-3 py-1 rounded-md text-xs">
+                  {activeCategory}
+                </span>
+                <button
+                  onClick={() => setActiveCategory(null)}
+                  className="text-xs text-indigo-600 hover:underline font-semibold"
+                >
+                  Change
+                </button>
               </div>
-            );
-          })}
-        </div>
+            </div>
+
+            <UploadDropzone
+              onFileSelect={handleDropzoneFileSelect}
+              label={`Drop or select statement file for ${activeCategory}`}
+              hint="Supports CSV, XLS, XLSX formats up to 50MB"
+            />
+          </div>
+        )}
       </div>
     </Modal>
   );
