@@ -4,6 +4,7 @@ export const MOCK_JOBS: Job[] = [
   {
     id: 'JOB-901',
     source: 'HDFC Statement (June 1-15)',
+    category: 'Bank Statements',
     kind: 'auto',
     format: 'CSV',
     rows: 420,
@@ -14,6 +15,7 @@ export const MOCK_JOBS: Job[] = [
   {
     id: 'JOB-902',
     source: 'Tally AR Sub-ledger Export',
+    category: 'AR Sub-ledger',
     kind: 'manual',
     format: 'XLS',
     rows: 1150,
@@ -24,6 +26,7 @@ export const MOCK_JOBS: Job[] = [
   {
     id: 'JOB-903',
     source: 'Razorpay Settlement Report',
+    category: 'Gateway Settlements',
     kind: 'auto',
     format: 'CSV',
     rows: 890,
@@ -34,6 +37,7 @@ export const MOCK_JOBS: Job[] = [
   {
     id: 'JOB-904',
     source: 'Warehouse Count Sheet W24',
+    category: 'AP Sub-ledger',
     kind: 'manual',
     format: 'CSV',
     rows: 340,
@@ -44,6 +48,7 @@ export const MOCK_JOBS: Job[] = [
   {
     id: 'JOB-905',
     source: 'Stripe Global Statements',
+    category: 'Customer Master',
     kind: 'auto',
     format: 'OFX',
     rows: 610,

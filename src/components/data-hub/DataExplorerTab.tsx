@@ -61,11 +61,12 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
   };
 
   return (
-    <div className="flex flex-col gap-5 fade-in">
-      {/* File Tab Strip */}
+    <div className="flex flex-col gap-4 fade-in">
+      {/* Category Scrollable Tab Strip */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 border-b border-slate-200">
         {jobs.map((j) => {
           const isActive = j.id === activeJobId;
+          const categoryLabel = j.category || j.source;
           return (
             <button
               key={j.id}
@@ -73,14 +74,14 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
                 setActiveJobId(j.id);
                 setCurrentPage(1);
               }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-2 ${
+              className={`px-3.5 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-2 ${
                 isActive
                   ? 'bg-indigo-600 text-white shadow-xs'
                   : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
               }`}
             >
               <FileText className="w-3.5 h-3.5" />
-              <span>{j.source}</span>
+              <span>{categoryLabel}</span>
               <span
                 className={`text-[10px] px-1.5 py-0.2 rounded font-semibold tnum ${
                   isActive ? 'bg-indigo-700 text-white' : 'bg-slate-100 text-slate-500'
@@ -93,7 +94,7 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
         })}
       </div>
 
-      {/* Filter and Action Bar */}
+      {/* Search Filter & Action Bar */}
       <div className="flex items-center justify-between gap-4">
         <div className="relative flex-1 max-w-md">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />

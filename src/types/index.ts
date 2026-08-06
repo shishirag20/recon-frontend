@@ -395,9 +395,21 @@ export interface ARUnreconciledGroup {
 }
 
 // ── Ingestion Data Hub Specs ──
+export const DATA_HUB_CATEGORIES = [
+  'Bank Statements',
+  'General Ledger',
+  'AR Sub-ledger',
+  'AP Sub-ledger',
+  'Gateway Settlements',
+  'Customer Master',
+] as const;
+
+export type DataHubCategory = (typeof DATA_HUB_CATEGORIES)[number];
+
 export interface Job {
   id: string;
   source: string;
+  category?: string;
   kind: 'auto' | 'manual';
   format: 'CSV' | 'XLS' | 'OFX' | 'PDF';
   rows: number;

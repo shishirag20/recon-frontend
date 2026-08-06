@@ -27,25 +27,27 @@ export const DataHubPage: React.FC = () => {
   const { openModal, closeModal } = useModal();
   const { toast } = useToast();
 
-  const handleFileUploaded = (file: File) => {
+  const handleFileUploaded = (file: File, category?: string) => {
     openModal(
       <ColumnMappingModal
         fileName={file.name}
         onClose={closeModal}
         onConfirm={() => {
           closeModal();
+          const targetCat = category || 'Bank Statements';
           const newJob: Job = {
             id: `JOB-${Math.floor(100 + Math.random() * 900)}`,
             source: file.name,
+            category: targetCat,
             kind: 'manual',
-            format: 'CSV',
+            format: file.name.endsWith('.xls') || file.name.endsWith('.xlsx') ? 'XLS' : 'CSV',
             rows: 150,
             errors: 0,
             status: 'success',
             at: new Date().toISOString(),
           };
           setJobs((prev) => [newJob, ...prev]);
-          toast(`File "${file.name}" ingested successfully with 150 rows!`, 'ok');
+          toast(`File "${file.name}" ingested under "${targetCat}" with 150 rows!`, 'ok');
         }}
       />,
       'lg'

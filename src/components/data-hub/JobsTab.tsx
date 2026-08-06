@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
 import type { Job } from '../../types';
 import { KpiCard } from '../ui/KpiCard';
-import { UploadDropzone } from './UploadDropzone';
-import { StatusPill } from '../ui/StatusPill';
 import { Button } from '../ui/Button';
+import { Plus } from 'lucide-react';
+import { IngestJobModal } from './IngestJobModal';
 
 interface JobsTabProps {
   jobs: Job[];
   onViewJob: (jobId: string) => void;
-  onFileUploaded: (file: File) => void;
+  onFileUploaded: (file: File, category: string) => void;
 }
 
 export const JobsTab: React.FC<JobsTabProps> = ({
@@ -16,7 +16,7 @@ export const JobsTab: React.FC<JobsTabProps> = ({
   onViewJob,
   onFileUploaded,
 }) => {
-  const [selectedSource, setSelectedSource] = useState('Bank Statements');
+  const [isIngestModalOpen, setIsIngestModalOpen] = useState(false);
 
   const jobsToday = jobs.length;
   const rowsInError = jobs.reduce((sum, j) => sum + j.errors, 0);
@@ -38,43 +38,7 @@ export const JobsTab: React.FC<JobsTabProps> = ({
         />
       </div>
 
-      {/* Upload Dropzone Card */}
-      <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <div className="flex flex-col">
-            <h3 className="text-sm font-bold text-slate-900 tracking-tight">
-              Ingest New Source File
-            </h3>
-            <span className="text-xs text-slate-500">
-              Select source category and upload transaction statements
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <label className="text-xs font-semibold text-slate-500">
-              Source Ledger:
-            </label>
-            <select
-              value={selectedSource}
-              onChange={(e) => setSelectedSource(e.target.value)}
-              className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-600 font-medium"
-            >
-              <option value="Bank Statements">Bank Statements</option>
-              <option value="GL Sub-ledger">GL Sub-ledger (AR/AP)</option>
-              <option value="Customer Master">Customer Master</option>
-              <option value="Gateway Settlements">Gateway Settlements</option>
-            </select>
-          </div>
-        </div>
-
-        <UploadDropzone
-          onFileSelect={onFileUploaded}
-          label={`Upload file for ${selectedSource}`}
-          hint="Supports CSV, XLS, XLSX formats up to 50MB"
-        />
-      </div>
-
-      {/* Job History Table Card */}
+      {/* Job History Table Card with Ingest New Job Action Button */}
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
         <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -85,20 +49,29 @@ export const JobsTab: React.FC<JobsTabProps> = ({
               {jobs.length} jobs
             </span>
           </div>
+
+          <Button
+            variant="primary"
+            size="sm"
+            icon={Plus}
+            onClick={() => setIsIngestModalOpen(true)}
+          >
+            Ingest New Job
+          </Button>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 text-slate-500 border-b border-slate-200 font-semibold">
               <tr>
-                <th className="px-4 py-3">Source Name</th>
+                <th className="px-4 py-3">Category / Source</th>
+                <th className="px-4 py-3">File / Source Name</th>
                 <th className="px-4 py-3">Trigger</th>
                 <th className="px-4 py-3">Format</th>
                 <th className="px-4 py-3 text-right">Rows</th>
                 <th className="px-4 py-3 text-right">Errors</th>
                 <th className="px-4 py-3 text-center">Status</th>
                 <th className="px-4 py-3 text-right">Timestamp</th>
-                <th className="px-4 py-3 text-center">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -108,6 +81,11 @@ export const JobsTab: React.FC<JobsTabProps> = ({
                   onClick={() => onViewJob(job.id)}
                   className="hover:bg-slate-50/80 cursor-pointer transition-colors"
                 >
+                  <td className="px-4 py-3 font-semibold text-slate-900">
+                    <span className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 font-medium text-[11px] border border-indigo-100">
+                      {job.category || 'Bank Statements'}
+                    </span>
+                  </td>
                   <td className="px-4 py-3 font-semibold text-indigo-600 hover:underline">
                     {job.source}
                   </td>
@@ -118,32 +96,26 @@ export const JobsTab: React.FC<JobsTabProps> = ({
                   </td>
                   <td className="px-4 py-3 text-slate-600 font-medium">{job.format}</td>
                   <td className="px-4 py-3 text-right font-semibold text-slate-900 tnum">
-                    {job.rows.toLocaleString()}
+                    {job.rows}
                   </td>
-                  <td
-                    className={`px-4 py-3 text-right font-bold tnum ${
-                      job.errors > 0 ? 'text-red-600' : 'text-slate-400'
-                    }`}
-                  >
+                  <td className="px-4 py-3 text-right font-semibold text-rose-600 tnum">
                     {job.errors}
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <StatusPill status={job.status} />
-                  </td>
-                  <td className="px-4 py-3 text-right text-slate-500 tnum">
-                    {new Date(job.at).toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </td>
-                  <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onViewJob(job.id)}
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                        job.status === 'success'
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : job.status === 'failed'
+                          ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                          : 'bg-amber-50 text-amber-700 border border-amber-200'
+                      }`}
                     >
-                      View Rows
-                    </Button>
+                      {job.status}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-right font-mono text-slate-400">
+                    {job.at.slice(0, 10)} {job.at.slice(11, 16)}
                   </td>
                 </tr>
               ))}
@@ -151,6 +123,13 @@ export const JobsTab: React.FC<JobsTabProps> = ({
           </table>
         </div>
       </div>
+
+      {/* Ingest Job Category Selection & Upload Modal */}
+      <IngestJobModal
+        isOpen={isIngestModalOpen}
+        onClose={() => setIsIngestModalOpen(false)}
+        onFileUploaded={onFileUploaded}
+      />
     </div>
   );
 };

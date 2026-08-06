@@ -1,4 +1,5 @@
 import React, { type ReactNode, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { clsx } from 'clsx';
 import { useAppStore, type ModalWidth } from '../../store/useAppStore';
 
@@ -39,10 +40,10 @@ export const Modal: React.FC<ModalProps> = ({
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs fade-in">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/45 backdrop-blur-xs fade-in">
       <div
-        className="fixed inset-0"
+        className="fixed inset-0 bg-transparent"
         onClick={onClose}
         aria-hidden="true"
       />
@@ -54,6 +55,7 @@ export const Modal: React.FC<ModalProps> = ({
       >
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
