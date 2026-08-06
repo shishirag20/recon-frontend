@@ -1,0 +1,244 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+/* Ensure 100% uniform Inter font family across all elements, inputs, buttons, and mono classes */
+*, body, button, input, select, textarea, .mono, .tnum, .font-mono {
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}
+
+body {
+  background-color: #f8fafc; /* bg-slate-50 */
+  color: #0f172a; /* text-slate-900 */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Uniform Tabular Numbers for Data & Figures without changing font family */
+.mono, .tnum, .font-mono {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Custom Scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+  animation: fadeIn 0.15s ease forwards;
+}
+
+/* ── AR Rules Studio: vertical timeline + accordion ── */
+.tl-wrap {
+  position: relative;
+}
+
+.tl-wrap::before {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: 28px;
+  bottom: 28px;
+  width: 2px;
+  background: #E2E8F0;
+  z-index: 0;
+}
+
+.tl-row {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+  position: relative;
+  z-index: 1;
+}
+
+.tl-rail {
+  width: 30px;
+  flex: none;
+  display: flex;
+  justify-content: center;
+}
+
+.tl-node {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #FFFFFF;
+  flex: none;
+  border: 1.5px solid #E2E8F0;
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: #94A3B8;
+  z-index: 1;
+}
+
+.tl-card {
+  flex: 1;
+  min-width: 0;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  transition: border-color .12s, box-shadow .12s;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.tl-card.open {
+  border-color: #6366F1;
+}
+
+.tl-header-wrap {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  cursor: pointer;
+  border-radius: 11px 11px 0 0;
+}
+
+.tl-header-wrap:hover {
+  background: #F8FAFC;
+}
+
+.tl-head-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.tl-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0F172A;
+}
+
+.tl-branch {
+  font-size: 11px;
+  color: #64748B;
+  font-style: italic;
+  margin-top: 1px;
+}
+
+.tl-hint {
+  font-size: 12px;
+  color: #64748B;
+  margin-top: 3px;
+  line-height: 1.45;
+}
+
+.tl-info-wrap {
+  position: relative;
+  flex: none;
+}
+
+.tl-info-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94A3B8;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: background .12s, color .12s;
+}
+
+.tl-info-btn:hover,
+.tl-info-btn:focus {
+  background: #EEF2FF;
+  color: #4338CA;
+}
+
+.tl-info-tooltip {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  right: -8px;
+  width: 260px;
+  padding: 9px 11px;
+  background: #0F172A;
+  color: #fff;
+  border-radius: 8px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  font-weight: 400;
+  text-align: left;
+  box-shadow: 0 8px 20px rgba(16, 19, 26, .18);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-3px);
+  transition: opacity .12s, transform .12s, visibility .12s;
+  pointer-events: none;
+}
+
+.tl-info-btn:hover+.tl-info-tooltip,
+.tl-info-btn:focus+.tl-info-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.tl-chev {
+  flex: none;
+  color: #94A3B8;
+  transition: transform .18s;
+}
+
+.tl-card.open .tl-chev {
+  transform: rotate(180deg);
+}
+
+.tl-body {
+  padding: 14px 20px 20px;
+  border-top: 1px solid #F1F5F9;
+  background: #F8FAFC;
+  border-radius: 0 0 11px 11px;
+}
+
+.tl-subhead {
+  margin-top: 8px;
+  margin-bottom: 10px;
+}
+
+.tl-subtitle {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #0F172A;
+}
+
+.tl-subdivider {
+  border-top: 1px dashed #E2E8F0;
+  margin: 16px 0;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #F1F5F9;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px solid #E2E8F0;
+}

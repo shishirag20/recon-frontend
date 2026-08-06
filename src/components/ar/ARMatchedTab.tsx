@@ -1,0 +1,487 @@
+import React, { useState, useMemo } from 'react';
+import { MOCK_AR_RESULT } from '../../mocks/ar';
+import { Button } from '../ui/Button';
+import { CheckCircle2, AlertTriangle, ArrowRightLeft, Undo2 } from 'lucide-react';
+import { useToast } from '../../hooks/useToast';
+import type { GatewaySettlement, MatchResult } from '../../types';
+
+interface MatchGroup {
+  key: string;
+  paymentId: string;
+  items: MatchResult[];
+}
+
+export const ARMatchedTab: React.FC = () => {
+  const [stream, setStream] = useState<'bank-cash' | 'gateway' | 'gl'>('bank-cash');
+  const [isUnreconMode, setIsUnreconMode] = useState<boolean>(false);
+  const [selectedMatches, setSelectedMatches] = useState<string[]>([]);
+  const { toast } = useToast();
+
+  // Structured matches for 100% fidelity with screenshot
+  const allMatched: MatchResult[] = useMemo(() => {
+    return [
+      {
+        invoiceId: 'INV-2026-101',
+        invoiceNum: 'INV-2026-101',
+        customer: 'Acme Technologies Pvt Ltd',
+        amount: 10000,
+        paymentId: 'PAY-BANK-001',
+        ruleName: 'Rule 2.1 : Pre-Advised UTR Match',
+        note: 'Rule 3.3 : Exact amount match',
+      },
+      {
+        invoiceId: 'INV-2026-102',
+        invoiceNum: 'INV-2026-102',
+        customer: 'Acme Technologies Pvt Ltd',
+        amount: 13500,
+        paymentId: 'PAY-BANK-002',
+        ruleName: 'Rule 2.2 : Payer Account & IFSC Match',
+        note: 'Rule 3.4 : TDS match (invoice − allowed TDS = payment)',
+      },
+      {
+        invoiceId: 'INV-2026-104',
+        invoiceNum: 'INV-2026-104',
+        customer: 'Beta Retail Solutions',
+        amount: 5980,
+        paymentId: 'PAY-BANK-004',
+        ruleName: 'Rule 2.2 : Payer Account & IFSC Match',
+        note: 'Rule 3.6 : Bank fee / minor variance',
+      },
+      {
+        invoiceId: 'INV-2026-118',
+        invoiceNum: 'INV-2026-118',
+        customer: 'Beta Retail Solutions',
+        amount: 2998,
+        paymentId: 'PAY-BANK-014',
+        ruleName: 'Rule 2.2 : Payer Account & IFSC Match',
+        note: 'Rule 3.7 : Small balance write-off',
+      },
+      {
+        invoiceId: 'INV-2026-105',
+        invoiceNum: 'INV-2026-105',
+        customer: 'Gamma Logistics India',
+        amount: 8000,
+        paymentId: 'PAY-BANK-005',
+        ruleName: 'Rule 2.3 : UPI Handle Match',
+        note: 'Rule 3.1 : Exact invoice number in narration',
+      },
+      {
+        invoiceId: 'INV-2026-1046',
+        invoiceNum: 'INV-2026-1046',
+        customer: 'Gamma Logistics India',
+        amount: 12000,
+        paymentId: 'PAY-BANK-007',
+        ruleName: 'Rule 2.4 : Customer Code in Narration Match',
+        note: 'Rule 3.2 : Invoice suffix / truncated number',
+      },
+      {
+        invoiceId: 'INV-2026-109',
+        invoiceNum: 'INV-2026-109',
+        customer: 'Delta Systems & Services',
+        amount: 5000,
+        paymentId: 'PAY-BANK-009',
+        ruleName: 'Rule 2.5 : Tax ID & PAN Match',
+        note: 'Rule 3.5 : Subset sum (many-to-many)',
+      },
+      {
+        invoiceId: 'INV-2026-110',
+        invoiceNum: 'INV-2026-110',
+        customer: 'Delta Systems & Services',
+        amount: 7000,
+        paymentId: 'PAY-BANK-009',
+        ruleName: 'Rule 2.5 : Tax ID & PAN Match',
+        note: 'Rule 3.5 : Subset sum (many-to-many)',
+      },
+      {
+        invoiceId: 'INV-2026-111',
+        invoiceNum: 'INV-2026-111',
+        customer: 'Epsilon Enterprises',
+        amount: 9000,
+        paymentId: 'PAY-BANK-010',
+        ruleName: 'Rule 2.6 : Company Name Match',
+        note: 'Rule 3.3 : Exact amount match',
+      },
+    ];
+  }, []);
+
+  // Group matches by paymentId
+  const groupedMatches: MatchGroup[] = useMemo(() => {
+    const map = new Map<string, MatchResult[]>();
+    allMatched.forEach((m) => {
+      const key = m.paymentId || `__${m.invoiceId}`;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(m);
+    });
+
+    const groups: MatchGroup[] = [];
+    map.forEach((items, key) => {
+      groups.push({
+        key,
+        paymentId: items[0].paymentId,
+        items,
+      });
+    });
+    return groups;
+  }, [allMatched]);
+
+  const glBalances = MOCK_AR_RESULT.glControlBalances;
+  const gatewaySettlements: GatewaySettlement[] = MOCK_AR_RESULT.gatewaySettlements || [
+    {
+      settlementId: 'STL-9901',
+      gateway: 'Razorpay',
+      transactionId: 'pay_L00293182',
+      grossAmount: 150000,
+      feeAmount: 2360,
+      netAmount: 147640,
+      settlementDate: '2026-06-12',
+      matched: true,
+    },
+    {
+      settlementId: 'STL-9902',
+      gateway: 'Stripe India',
+      transactionId: 'pi_3M0192831',
+      grossAmount: 350000,
+      feeAmount: 7000,
+      netAmount: 343000,
+      settlementDate: '2026-06-13',
+      matched: true,
+    },
+  ];
+
+  const toggleSelectMatch = (invId: string) => {
+    setSelectedMatches((prev) =>
+      prev.includes(invId) ? prev.filter((id) => id !== invId) : [...prev, invId]
+    );
+  };
+
+  const handlePerformUnreconcile = () => {
+    toast(`Successfully unreconciled ${selectedMatches.length} transaction(s)`, 'ok');
+    setSelectedMatches([]);
+    setIsUnreconMode(false);
+  };
+
+  const renderRuleLine = (ruleText: string) => {
+    if (!ruleText) return null;
+    const parts = ruleText.split(' : ');
+    if (parts.length > 1) {
+      return (
+        <div className="text-[12.5px] text-slate-800">
+          <span className="font-semibold text-slate-900">{parts[0]}</span> :{' '}
+          <span className="text-slate-600 font-normal">{parts.slice(1).join(' : ')}</span>
+        </div>
+      );
+    }
+    return <div className="text-[12.5px] text-slate-800 font-medium">{ruleText}</div>;
+  };
+
+  return (
+    <div className="p-6 space-y-5 fade-in w-full">
+      {/* Top Segmented Control & Unreconcile Action Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-4 bg-white border border-slate-200 rounded-xl p-3 shadow-xs">
+        {/* Segmented Control */}
+        <div className="inline-flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
+          <button
+            onClick={() => setStream('bank-cash')}
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${stream === 'bank-cash'
+              ? 'bg-white shadow-xs text-indigo-600'
+              : 'text-slate-600 hover:text-slate-900'
+              }`}
+          >
+            Invoice vs Bank Payments{' '}
+            <span className="font-mono text-[11px] opacity-70">({allMatched.length})</span>
+          </button>
+
+          <button
+            onClick={() => setStream('gateway')}
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${stream === 'gateway'
+              ? 'bg-white shadow-xs text-indigo-600'
+              : 'text-slate-600 hover:text-slate-900'
+              }`}
+          >
+            Invoice vs Gateway Payments{' '}
+            <span className="font-mono text-[11px] opacity-70">({gatewaySettlements.length})</span>
+          </button>
+
+          <button
+            onClick={() => setStream('gl')}
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${stream === 'gl'
+              ? 'bg-white shadow-xs text-indigo-600'
+              : 'text-slate-600 hover:text-slate-900'
+              }`}
+          >
+            Subledger vs GL Control
+          </button>
+        </div>
+
+        {/* Unreconcile Action */}
+        {stream === 'bank-cash' && (
+          <div>
+            {!isUnreconMode ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={Undo2}
+                onClick={() => setIsUnreconMode(true)}
+              >
+                Unreconcile
+              </Button>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500 font-medium">
+                  {selectedMatches.length} selected
+                </span>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={selectedMatches.length === 0}
+                  onClick={handlePerformUnreconcile}
+                >
+                  Unreconcile Selected
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setIsUnreconMode(false);
+                    setSelectedMatches([]);
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* STREAM 1: Invoice vs Bank Payments */}
+      {stream === 'bank-cash' && (
+        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+          <table className="w-full text-left text-xs border-collapse">
+            {/* Header Structure Matching Screenshot & Prototype */}
+            <thead>
+              {/* Main Header Row */}
+              <tr className="border-b border-slate-100">
+                {isUnreconMode && <th className="w-10 px-4 py-3" rowSpan={2}></th>}
+                <th className="px-4 pt-3 pb-1 text-center font-bold text-xs text-slate-800 uppercase tracking-wider border-b border-slate-100">
+                  INVOICE
+                </th>
+                <th className="px-4 pt-3 pb-1 text-center font-bold text-xs text-slate-800 uppercase tracking-wider border-x border-b border-slate-100">
+                  PAYMENT
+                </th>
+                <th className="px-4 pt-3 pb-2 text-left font-bold text-xs text-slate-800 uppercase tracking-wider" rowSpan={2}>
+                  RESOLVED VIA
+                </th>
+              </tr>
+
+              {/* Sub-Header Row */}
+              <tr className="text-[10px] text-slate-400 font-bold uppercase tracking-wider border-b border-slate-200">
+                <th className="px-4 py-2 font-bold">
+                  <div className="grid grid-cols-2 gap-3 text-center">
+                    <div>INVOICE NUMBER</div>
+                    <div>AMOUNT</div>
+                  </div>
+                </th>
+                <th className="px-4 py-2 font-bold border-x border-slate-200">
+                  <div className="grid grid-cols-2 gap-3 text-center">
+                    <div>BANK TRANSACTION ID</div>
+                    <div>AMOUNT</div>
+                  </div>
+                </th>
+              </tr>
+            </thead>
+
+            {/* Table Body */}
+            <tbody>
+              {groupedMatches.map((group, groupIdx) => {
+                const isGrouped = group.items.length > 1;
+                const totalPaymentReceived = group.items.reduce(
+                  (sum, item) => sum + (item.paid || item.amount),
+                  0
+                );
+
+                return group.items.map((item, idx) => {
+                  const isFirst = idx === 0;
+                  const isChecked = selectedMatches.includes(item.invoiceId);
+                  const ruleMeta = {
+                    idRule: item.ruleName || 'Rule 2.1 : Pre-Advised UTR Match',
+                    allocRule: item.note || 'Rule 3.3 : Exact amount match',
+                  };
+
+                  return (
+                    <tr
+                      key={item.invoiceId}
+                      className={`hover:bg-slate-50/80 transition-colors ${idx < group.items.length - 1 ? 'border-b border-slate-100' : ''
+                        } ${groupIdx > 0 && isFirst ? 'border-t-4 border-slate-100' : ''}`}
+                    >
+                      {/* Checkbox (Unreconcile Mode) */}
+                      {isUnreconMode && isFirst && (
+                        <td
+                          rowSpan={group.items.length}
+                          className="px-4 py-3 text-center align-middle border-r border-slate-100"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => toggleSelectMatch(item.invoiceId)}
+                            className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                          />
+                        </td>
+                      )}
+
+                      {/* Invoice Column (Invoice Number + Amount 2-col Grid) - Accent border ONLY if isGrouped */}
+                      <td
+                        className={`px-4 py-3.5 align-middle ${isGrouped ? 'border-l-[3px] border-indigo-600' : ''
+                          }`}
+                      >
+                        <div className="grid grid-cols-2 gap-3 text-center items-center font-medium text-[13px] text-slate-900">
+                          <div className="font-semibold text-slate-900">{item.invoiceNum}</div>
+                          <div className="font-semibold text-slate-900">
+                            ₹{item.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Payment Column (Payment ID + Amount 2-col Grid) - Spans all rows if grouped */}
+                      {isFirst && (
+                        <td
+                          rowSpan={group.items.length}
+                          className="px-4 py-3.5 align-middle border-x border-slate-200"
+                        >
+                          <div className="grid grid-cols-2 gap-3 text-center items-center font-medium text-[13px] text-slate-900">
+                            <div className="font-semibold text-slate-900">{item.paymentId}</div>
+                            <div className="font-semibold text-slate-900">
+                              ₹{totalPaymentReceived.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </div>
+                          </div>
+                        </td>
+                      )}
+
+                      {/* Resolved Via Column - Spans all rows if grouped */}
+                      {isFirst && (
+                        <td
+                          rowSpan={group.items.length}
+                          className="px-4 py-3.5 align-middle space-y-1"
+                        >
+                          {renderRuleLine(ruleMeta.idRule)}
+                          {renderRuleLine(ruleMeta.allocRule)}
+                        </td>
+                      )}
+                    </tr>
+                  );
+                });
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* STREAM 2: Invoice vs Gateway Payments */}
+      {stream === 'gateway' && (
+        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                <th className="px-4 py-2.5">Settlement ID</th>
+                <th className="px-4 py-2.5">Gateway</th>
+                <th className="px-4 py-2.5">Txn Reference</th>
+                <th className="px-4 py-2.5 text-right">Gross</th>
+                <th className="px-4 py-2.5 text-right">Fee</th>
+                <th className="px-4 py-2.5 text-right">Net</th>
+                <th className="px-4 py-2.5 text-right">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {gatewaySettlements.map((gw: GatewaySettlement) => (
+                <tr key={gw.settlementId} className="hover:bg-slate-50 transition-colors">
+                  <td className="px-4 py-3 font-semibold text-indigo-600">{gw.settlementId}</td>
+                  <td className="px-4 py-3 font-medium text-slate-900">{gw.gateway}</td>
+                  <td className="px-4 py-3 text-slate-600">{gw.transactionId}</td>
+                  <td className="px-4 py-3 text-right font-semibold text-slate-900">
+                    ₹{gw.grossAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </td>
+                  <td className="px-4 py-3 text-right text-slate-500">
+                    ₹{gw.feeAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </td>
+                  <td className="px-4 py-3 text-right font-semibold text-slate-900">
+                    ₹{gw.netAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 text-[11px] font-semibold border border-emerald-200">
+                      Settled
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* STREAM 3: Subledger vs GL Control */}
+      {stream === 'gl' && (
+        <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs max-w-2xl mx-auto space-y-5">
+          <div className="flex items-center gap-3 pb-4 border-b border-slate-200">
+            <div className="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center flex-none border border-indigo-100">
+              <ArrowRightLeft className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">Subledger vs GL Control Reconciliation</h3>
+              <p className="text-xs text-slate-500">
+                Verifies accounts receivable sub-ledger matches General Ledger control account 11000.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-4 text-center">
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+              <div className="text-[11px] font-bold text-slate-400 uppercase">AR Subledger Balance</div>
+              <div className="text-base font-semibold text-slate-900 mt-1">
+                ₹{(glBalances?.subledgerBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+              <div className="text-[11px] font-bold text-slate-400 uppercase">GL Account #11000</div>
+              <div className="text-base font-semibold text-slate-900 mt-1">
+                ₹{(glBalances?.glBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </div>
+            </div>
+
+            <div
+              className={`p-4 rounded-xl border ${glBalances?.variance ? 'bg-amber-50 border-amber-200' : 'bg-emerald-50 border-emerald-200'
+                }`}
+            >
+              <div
+                className={`text-[11px] font-bold uppercase ${glBalances?.variance ? 'text-amber-700' : 'text-emerald-700'
+                  }`}
+              >
+                Variance
+              </div>
+              <div
+                className={`text-base font-semibold mt-1 ${glBalances?.variance ? 'text-amber-700' : 'text-emerald-700'
+                  }`}
+              >
+                ₹{(glBalances?.variance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </div>
+            </div>
+          </div>
+
+          {glBalances?.variance ? (
+            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2.5 text-amber-900 text-xs font-medium">
+              <AlertTriangle className="w-4 h-4 text-amber-600 flex-none" />
+              <span>
+                Variance of ₹{glBalances.variance.toLocaleString('en-IN', { minimumFractionDigits: 2 })} flagged for GL Control review.
+              </span>
+            </div>
+          ) : (
+            <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center gap-2.5 text-emerald-900 text-xs font-medium">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-none" />
+              <span>Subledger and General Ledger balances match perfectly. Zero variance.</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
