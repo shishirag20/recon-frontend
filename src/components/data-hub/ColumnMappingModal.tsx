@@ -98,12 +98,18 @@ export const ColumnMappingModal: React.FC<ColumnMappingModalProps> = ({
       </div>
 
       <div className="flex items-center justify-end gap-3 border-t border-slate-200 pt-4">
-        <Button variant="ghost" onClick={onClose}>
+        <button
+          onClick={onClose}
+          className="px-4 py-2 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100"
+        >
           Cancel
-        </Button>
-        <Button variant="primary" icon={Check} onClick={onConfirm}>
-          Confirm & Import
-        </Button>
+        </button>
+        <button
+          onClick={onConfirm}
+          className="px-4 py-2 rounded-lg text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-xs"
+        >
+          Save Column Mappings
+        </button>
       </div>
     </div>
   );
