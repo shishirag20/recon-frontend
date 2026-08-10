@@ -64,7 +64,7 @@ export const JobsTab: React.FC<JobsTabProps> = ({
           setDataSources(sources);
           setSourcesInStore(sources);
         }
-      }).catch(() => {});
+      }).catch(() => { });
     }
     return () => {
       Object.values(pollTimersRef.current).forEach(clearInterval);
@@ -158,7 +158,7 @@ export const JobsTab: React.FC<JobsTabProps> = ({
         ...prev,
         [sourceId]: {
           job: initialJob,
-          text: 'AI is processing & mapping columns...',
+          text: 'Processing the file...',
         },
       }));
 
@@ -177,12 +177,12 @@ export const JobsTab: React.FC<JobsTabProps> = ({
               job: latest,
               text:
                 latest.status === 'RUNNING' || latest.status === 'PENDING'
-                  ? 'AI is processing & mapping columns...'
+                  ? 'Processing the file...'
                   : latest.status === 'SUCCESS'
-                  ? 'Processed successfully'
-                  : latest.status === 'PARTIAL'
-                  ? 'Processed with error rows'
-                  : 'Processing failed',
+                    ? 'Processed successfully'
+                    : latest.status === 'PARTIAL'
+                      ? 'Processed with error rows'
+                      : 'Processing failed',
             },
           }));
 
@@ -261,9 +261,9 @@ export const JobsTab: React.FC<JobsTabProps> = ({
               Click any source card below to select and upload a statement file
             </p>
           </div>
-          <span className="text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 px-3 py-1 rounded-full">
+          {/* <span className="text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 px-3 py-1 rounded-full">
             {dataSources.length} Connected Feeds
-          </span>
+          </span> */}
         </div>
 
         {/* Data Source Cards Grid */}
@@ -282,9 +282,8 @@ export const JobsTab: React.FC<JobsTabProps> = ({
               <div
                 key={ds.source_id}
                 onClick={() => !isPolling && handleCardClick(ds.source_id, ds.name)}
-                className={`group bg-white border border-slate-200 hover:border-indigo-600 hover:shadow-md p-4 rounded-xl cursor-pointer transition-all duration-150 flex flex-col justify-between gap-3 ${
-                  isPolling ? 'ring-2 ring-indigo-500/20 border-indigo-400' : ''
-                }`}
+                className={`group bg-white border border-slate-200 hover:border-indigo-600 hover:shadow-md p-4 rounded-xl cursor-pointer transition-all duration-150 flex flex-col justify-between gap-3 ${isPolling ? 'ring-2 ring-indigo-500/20 border-indigo-400' : ''
+                  }`}
               >
                 {/* Top Card Info */}
                 <div className="flex items-start gap-3.5">
@@ -297,9 +296,9 @@ export const JobsTab: React.FC<JobsTabProps> = ({
                       <h4 className="font-bold text-slate-900 group-hover:text-indigo-600 transition-colors text-sm">
                         {ds.name}
                       </h4>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase">
+                      {/* <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase">
                         {ds.status}
-                      </span>
+                      </span> */}
                     </div>
                     <p className="text-slate-500 mt-1 leading-relaxed text-[11.5px]">
                       {description}
@@ -312,7 +311,7 @@ export const JobsTab: React.FC<JobsTabProps> = ({
                   {isPolling ? (
                     <div className="flex items-center gap-2 text-indigo-600 font-semibold">
                       <Loader2 className="w-4 h-4 animate-spin flex-none" />
-                      <span className="truncate">{activePollState?.text || 'AI processing...'}</span>
+                      <span className="truncate">{activePollState?.text || 'Processing...'}</span>
                     </div>
                   ) : latestJob && latestJob.file_name ? (
                     <div className="flex items-center justify-between w-full">
@@ -329,9 +328,9 @@ export const JobsTab: React.FC<JobsTabProps> = ({
                       </div>
 
                       <div className="flex items-center gap-2 flex-none">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${STATUS_STYLES[statusKey]}`}>
+                        {/* <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${STATUS_STYLES[statusKey]}`}>
                           {STATUS_LABEL[statusKey]}
-                        </span>
+                        </span> */}
                         <span className="text-[10px] font-semibold text-indigo-600 group-hover:underline">
                           Re-upload
                         </span>
