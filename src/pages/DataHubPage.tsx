@@ -1,87 +1,114 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Topbar } from '../components/layout/Topbar';
 import { TabBar, type TabItem } from '../components/layout/TabBar';
 import { JobsTab } from '../components/data-hub/JobsTab';
 import { SchemasTab } from '../components/data-hub/SchemasTab';
 import { DataExplorerTab } from '../components/data-hub/DataExplorerTab';
-import { ColumnMappingModal } from '../components/data-hub/ColumnMappingModal';
 import { InsertRowModal } from '../components/data-hub/InsertRowModal';
-import { JobDataModal } from '../components/data-hub/JobDataModal';
-import { MOCK_JOBS, MOCK_STAGING, MOCK_MAPPINGS } from '../mocks/data-hub';
 import { useModal } from '../hooks/useModal';
 import { useToast } from '../hooks/useToast';
-import type { Job, StagingRow, FieldMapping } from '../types';
+import { useDataHubStore } from '../store/useDataHubStore';
+import { dataSourceService, ingestionJobService } from '../services';
+import type { FieldMapping } from '../types';
+import type { IngestionJobOut } from '../types/datahub';
+
+import { POLL_INTERVAL_MS } from '../constants/datahub';
 
 const DATA_HUB_TABS: TabItem[] = [
-  { key: 'jobs', label: 'Ingestion Jobs', badge: MOCK_JOBS.length },
-  { key: 'schemas', label: 'Schemas & Validation', badge: MOCK_MAPPINGS.length },
-  { key: 'explorer', label: 'Data Explorer', badge: MOCK_STAGING.length },
+  { key: 'jobs', label: 'Ingestion Jobs' },
+  { key: 'schemas', label: 'Schemas & Validation' },
+  { key: 'explorer', label: 'Data Explorer' },
 ];
 
 export const DataHubPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState('jobs');
-  const [jobs, setJobs] = useState<Job[]>(MOCK_JOBS);
-  const [rows, setRows] = useState<StagingRow[]>(MOCK_STAGING);
-  const [mappings, setMappings] = useState<FieldMapping[]>(MOCK_MAPPINGS);
+  const [mappings, setMappings] = useState<FieldMapping[]>([]);
 
   const { openModal, closeModal } = useModal();
   const { toast } = useToast();
 
-  const handleFileUploaded = (file: File, category?: string) => {
-    openModal(
-      <ColumnMappingModal
-        fileName={file.name}
-        onClose={closeModal}
-        onConfirm={() => {
-          closeModal();
-          const targetCat = category || 'Bank Statements';
-          const newJob: Job = {
-            id: `JOB-${Math.floor(100 + Math.random() * 900)}`,
-            source: file.name,
-            category: targetCat,
-            kind: 'manual',
-            format: file.name.endsWith('.xls') || file.name.endsWith('.xlsx') ? 'XLS' : 'CSV',
-            rows: 150,
-            errors: 0,
-            status: 'success',
-            at: new Date().toISOString(),
-          };
-          setJobs((prev) => [newJob, ...prev]);
-          toast(`File "${file.name}" ingested under "${targetCat}" with 150 rows!`, 'ok');
-        }}
-      />,
-      'lg'
+  const { jobs, setJobs, setSources, upsertJob } = useDataHubStore();
+
+  // ── On mount: fetch data sources (for source_id map) and job list ──────────
+  useEffect(() => {
+    let cancelled = false;
+
+    const init = async () => {
+      try {
+        const [sources, jobList] = await Promise.all([
+          dataSourceService.list(),
+          ingestionJobService.list(),
+        ]);
+        if (!cancelled) {
+          setSources(sources);
+          setJobs(jobList);
+        }
+      } catch {
+        // Silently handle error
+      }
+    };
+
+    init();
+    return () => { cancelled = true; };
+  }, [setSources, setJobs]);
+
+
+
+  // ── Poll pending/running jobs periodically until all reach terminal status ──
+  useEffect(() => {
+    const hasActiveJobs = jobs.some(
+      (j) => j.status === 'PENDING' || j.status === 'RUNNING'
+    );
+
+    if (!hasActiveJobs) return;
+
+    const intervalId = setInterval(async () => {
+      try {
+        const freshJobs = await ingestionJobService.list();
+        setJobs(freshJobs);
+      } catch {
+        // Silently ignore poll errors
+      }
+    }, POLL_INTERVAL_MS);
+
+    return () => clearInterval(intervalId);
+  }, [jobs, setJobs]);
+
+  // ── Handler: called on successful upload + polling done ──────────────────
+  const handleJobComplete = (job: IngestionJobOut) => {
+    upsertJob(job);
+    toast(
+      `✓ "${job.file_name}" ingested — ${job.row_count} canonical rows ingested${job.error_count > 0 ? `, ${job.error_count} failed` : ''}`,
+      job.error_count > 0 ? 'warn' : 'ok'
     );
   };
 
-  const handleViewJob = (jobId: string) => {
-    const target = jobs.find((j) => j.id === jobId);
-    if (!target) return;
-    openModal(<JobDataModal job={target} onClose={closeModal} />, '2xl');
+  // ── Handler: view job details (switches to Data Explorer tab) ─────────────
+  const handleViewJob = (_jobId: string) => {
+    setActiveTab('explorer');
   };
 
+
+
+  // ── Handler: retry failed job ─────────────────────────────────────────────
+  const handleRetry = async (jobId: string) => {
+    try {
+      const retried = await ingestionJobService.retry(jobId);
+      upsertJob(retried);
+      toast('Job reset to PENDING and queued for retry.', 'warn');
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Retry failed';
+      toast(msg, 'bad');
+    }
+  };
+
+  // ── Handler: insert manual staging row ───────────────────────────────────
   const handleInsertRow = () => {
     openModal(
       <InsertRowModal
         onClose={closeModal}
-        onAdd={(newRow) => {
+        onAdd={(_newRow) => {
           closeModal();
-          const stagingObj: StagingRow = {
-            id: `STG-${Math.floor(100 + Math.random() * 900)}`,
-            jobId: jobs[0]?.id || 'JOB-901',
-            sourceLabel: 'Manual Entry',
-            category: 'Manual',
-            status: 'mapped',
-            rowData: { ...newRow },
-            txnId: `MAN-${Math.floor(1000 + Math.random() * 9000)}`,
-            date: newRow.date,
-            reference: newRow.reference || 'MANUAL-REF',
-            counterparty: newRow.description,
-            description: newRow.description,
-            amount: parseFloat(newRow.amount) || 0,
-            currency: newRow.currency,
-          };
-          setRows((prev) => [stagingObj, ...prev]);
           toast('Manual row added to Data Explorer staging!', 'ok');
         }}
       />,
@@ -89,8 +116,7 @@ export const DataHubPage: React.FC = () => {
     );
   };
 
-  const handleDeleteRow = (id: string) => {
-    setRows((prev) => prev.filter((r) => r.id !== id));
+  const handleDeleteRow = (_id: string) => {
     toast('Row deleted from staging', 'warn');
   };
 
@@ -127,7 +153,8 @@ export const DataHubPage: React.FC = () => {
           <JobsTab
             jobs={jobs}
             onViewJob={handleViewJob}
-            onFileUploaded={handleFileUploaded}
+            onJobComplete={handleJobComplete}
+            onRetry={handleRetry}
           />
         )}
 
@@ -142,7 +169,6 @@ export const DataHubPage: React.FC = () => {
         {activeTab === 'explorer' && (
           <DataExplorerTab
             jobs={jobs}
-            rows={rows}
             onInsertRow={handleInsertRow}
             onDeleteRow={handleDeleteRow}
           />

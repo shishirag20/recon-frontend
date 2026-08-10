@@ -32,8 +32,10 @@ export async function apiClient<T>(
 
   const token = localStorage.getItem(AUTH_TOKEN_KEY);
 
+  const isFormData = body instanceof FormData;
+
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     Accept: 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(customHeaders as Record<string, string>),
@@ -42,9 +44,7 @@ export async function apiClient<T>(
   const config: RequestInit = {
     ...customConfig,
     headers,
-    body: body && typeof body === 'object' && !(body instanceof FormData)
-      ? JSON.stringify(body)
-      : body,
+    body: isFormData ? body : body && typeof body === 'object' ? JSON.stringify(body) : body,
   };
 
   try {
@@ -104,4 +104,23 @@ export const api = {
   
   delete: <T>(endpoint: string, options?: RequestOptions) =>
     apiClient<T>(endpoint, { ...options, method: 'DELETE' }),
+
+  /**
+   * Upload a file via multipart/form-data (POST).
+   * Omits Content-Type header so the browser sets it with the correct boundary.
+   */
+  postForm: <T>(endpoint: string, formData: FormData, options?: RequestOptions) => {
+    const { headers: customHeaders, ...rest } = options || {};
+    return apiClient<T>(endpoint, {
+      ...rest,
+      method: 'POST',
+      body: formData,
+      headers: {
+        // Explicitly omit Content-Type so fetch sets multipart/form-data + boundary
+        Accept: 'application/json',
+        ...(customHeaders as Record<string, string>),
+      },
+    });
+  },
 };
+

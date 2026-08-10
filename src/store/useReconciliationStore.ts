@@ -1,11 +1,13 @@
 import { create } from 'zustand';
 import type { Reconciliation } from '../types';
-import { MOCK_RECONCILIATION_JOBS } from '../mocks/reconciliations';
+import { reconciliationsService } from '../services/reconciliations.service';
 
 interface ReconciliationStoreState {
   jobs: Reconciliation[];
   selectedCategory: string;
   searchQuery: string;
+  isLoading: boolean;
+  fetchJobs: () => Promise<void>;
   setCategory: (category: string) => void;
   setSearchQuery: (query: string) => void;
   addJob: (job: Reconciliation) => void;
@@ -13,9 +15,21 @@ interface ReconciliationStoreState {
 }
 
 export const useReconciliationStore = create<ReconciliationStoreState>((set) => ({
-  jobs: MOCK_RECONCILIATION_JOBS,
+  jobs: [],
   selectedCategory: 'all',
   searchQuery: '',
+  isLoading: false,
+
+  fetchJobs: async () => {
+    set({ isLoading: true });
+    try {
+      const jobs = await reconciliationsService.getReconciliationJobs();
+      set({ jobs, isLoading: false });
+    } catch {
+      set({ isLoading: false });
+    }
+  },
+
   setCategory: (category) => set({ selectedCategory: category }),
   setSearchQuery: (query) => set({ searchQuery: query }),
   addJob: (newJob) => set((state) => ({ jobs: [newJob, ...state.jobs] })),

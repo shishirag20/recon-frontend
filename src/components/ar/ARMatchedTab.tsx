@@ -1,9 +1,9 @@
-import React, { useState, useMemo } from 'react';
-import { MOCK_AR_RESULT } from '../../mocks/ar';
+import React, { useState, useMemo, useEffect } from 'react';
+import { arService } from '../../services/ar.service';
 import { Button } from '../ui/Button';
 import { CheckCircle2, AlertTriangle, ArrowRightLeft, Undo2 } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
-import type { GatewaySettlement, MatchResult } from '../../types';
+import type { GatewaySettlement, MatchResult, AREngineResult } from '../../types';
 
 interface MatchGroup {
   key: string;
@@ -15,7 +15,16 @@ export const ARMatchedTab: React.FC = () => {
   const [stream, setStream] = useState<'bank-cash' | 'gateway' | 'gl'>('bank-cash');
   const [isUnreconMode, setIsUnreconMode] = useState<boolean>(false);
   const [selectedMatches, setSelectedMatches] = useState<string[]>([]);
+  const [arResult, setArResult] = useState<AREngineResult | null>(null);
   const { toast } = useToast();
+
+  useEffect(() => {
+    let cancelled = false;
+    arService.getARReconciliation().then((res) => {
+      if (!cancelled) setArResult(res);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   // Structured matches for 100% fidelity with screenshot
   const allMatched: MatchResult[] = useMemo(() => {
@@ -124,8 +133,8 @@ export const ARMatchedTab: React.FC = () => {
     return groups;
   }, [allMatched]);
 
-  const glBalances = MOCK_AR_RESULT.glControlBalances;
-  const gatewaySettlements: GatewaySettlement[] = MOCK_AR_RESULT.gatewaySettlements || [
+  const glBalances = arResult?.glControlBalances;
+  const gatewaySettlements: GatewaySettlement[] = arResult?.gatewaySettlements || [
     {
       settlementId: 'STL-9901',
       gateway: 'Razorpay',

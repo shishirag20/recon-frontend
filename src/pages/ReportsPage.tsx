@@ -1,10 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Topbar } from '../components/layout/Topbar';
 import { TabBar } from '../components/layout/TabBar';
 import { Button } from '../components/ui/Button';
 import { Search, Download, Shield, FileText, ChevronRight } from 'lucide-react';
 import { useToast } from '../hooks/useToast';
-import { MOCK_AR_RESULT } from '../mocks/ar';
+import { reportsService } from '../services/reports.service';
+import { arService } from '../services/ar.service';
 import { RunStatementModal, type RunReportDetail } from '../components/reports/RunStatementModal';
 
 interface MatchedReportItem {
@@ -34,9 +35,30 @@ export const ReportsPage: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [matchedStream, setMatchedStream] = useState<'bank-cash' | 'gateway' | 'gl'>('bank-cash');
   const [selectedRunModal, setSelectedRunModal] = useState<RunReportDetail | null>(null);
+  const [fetchedRuns, setFetchedRuns] = useState<RunReportDetail[]>([]);
+  const [arExceptions, setArExceptions] = useState<any[]>([]);
   const { toast } = useToast();
 
-  const reportRuns: RunReportDetail[] = useMemo(() => [
+  useEffect(() => {
+    let cancelled = false;
+    reportsService.getReportRuns().then((runs: any) => {
+      if (!cancelled && runs && runs.length > 0) {
+        setFetchedRuns(runs);
+      }
+    }).catch(() => {});
+
+    arService.getARReconciliation().then((ar) => {
+      if (!cancelled && ar && ar.exceptions) {
+        setArExceptions(ar.exceptions);
+      }
+    }).catch(() => {});
+
+    return () => { cancelled = true; };
+  }, []);
+
+  const reportRuns: RunReportDetail[] = useMemo(() => {
+    if (fetchedRuns.length > 0) return fetchedRuns;
+    return [
     {
       runId: 'RUN-20260701-AR001',
       date: '2026-07-01',
@@ -97,7 +119,8 @@ export const ReportsPage: React.FC = () => {
       reviewedBy: 'Marcus Feld',
       signedAt: '2026-05-15 15:10:00 ISO',
     },
-  ], []);
+  ];
+  }, [fetchedRuns]);
 
   const reportMatched: MatchedReportItem[] = useMemo(() => [
     {
@@ -179,7 +202,7 @@ export const ReportsPage: React.FC = () => {
   const tabs = [
     { key: 'summary', label: 'Summary Statements', badge: reportRuns.length },
     { key: 'matched', label: 'Matched Transactions', badge: reportMatched.length },
-    { key: 'exceptions', label: 'Exception & Adjustment Logs', badge: (MOCK_AR_RESULT.exceptions || []).length },
+    { key: 'exceptions', label: 'Exception & Adjustment Logs', badge: arExceptions.length },
     { key: 'audit', label: 'Audit Trails', badge: auditLogs.length },
   ];
 
@@ -266,7 +289,7 @@ export const ReportsPage: React.FC = () => {
                 Exceptions Logged
               </div>
               <div className="text-xl font-bold font-mono text-rose-600 mt-1">
-                {(MOCK_AR_RESULT.exceptions || []).length}
+                {arExceptions.length}
               </div>
               <div className="text-[11.5px] text-slate-500 mt-1">
                 Currently open
@@ -481,7 +504,7 @@ export const ReportsPage: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {(MOCK_AR_RESULT.exceptions || []).map((exc, idx) => (
+                      {arExceptions.map((exc: any, idx: number) => (
                         <tr key={idx} className="hover:bg-slate-50">
                           <td className="px-4 py-3.5 font-mono text-slate-500">
                             {exc.date || '2026-06-12'}

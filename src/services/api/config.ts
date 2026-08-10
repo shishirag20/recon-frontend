@@ -5,7 +5,7 @@
 export const IS_MOCK = import.meta.env.VITE_USE_MOCK_DATA !== 'false';
 
 export const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+  import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 export const AUTH_TOKEN_KEY =
   import.meta.env.VITE_AUTH_TOKEN_KEY || 'recon_auth_token';
@@ -28,11 +28,19 @@ export const API_ROUTES = {
     DETAIL: (id: string) => `/reconciliations/${id}`,
     RUN: (id: string) => `/reconciliations/${id}/run`,
   },
-  // Ingestion & Data Hub
+  // DataHub — Data Sources
   DATA_HUB: {
-    JOBS: `/data-hub/jobs`,
-    STAGING: `/data-hub/staging`,
-    MAPPINGS: `/data-hub/mappings`,
+    DATA_SOURCES: `/data-sources`,
+    DATA_SOURCE: (id: string) => `/data-sources/${id}`,
+    FIELD_MAPPINGS: (id: string) => `/data-sources/${id}/field-mappings`,
+    FIELD_MAPPING_VERSIONS: (id: string) => `/data-sources/${id}/field-mappings/versions`,
+    FIELD_MAPPING_PREVIEW: (id: string) => `/data-sources/${id}/field-mappings/preview`,
+    INGESTION_JOBS: `/ingestion-jobs`,
+    INGESTION_JOB: (id: string) => `/ingestion-jobs/${id}`,
+    INGESTION_JOB_RETRY: (id: string) => `/ingestion-jobs/${id}/retry`,
+    INGESTION_JOB_RECORDS: (id: string) => `/ingestion-jobs/${id}/records`,
+    INGESTION_JOB_RECORD: (jobId: string, recordId: string) => `/ingestion-jobs/${jobId}/records/${recordId}`,
+    RECORDS_BY_STREAM: `/records`,
   },
   // Reports & Audit
   REPORTS: {

@@ -1,9 +1,9 @@
 import React, { useState, useMemo } from 'react';
-import { MOCK_AR_RESULT } from '../../mocks/ar';
+import { arService } from '../../services/ar.service';
 import { Button } from '../ui/Button';
 import { Search, Check, X, AlertCircle } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
-import type { ARExceptionType } from '../../types';
+import type { ARExceptionType, AREngineResult } from '../../types';
 
 export interface ARExceptionItem {
   id: string;
@@ -28,10 +28,19 @@ export const ARExceptionsTab: React.FC = () => {
   const [activeExceptionKey, setActiveExceptionKey] = useState<string | null>('Short-Pay:INV-2026-003');
   const [shortPayDisposition, setShortPayDisposition] = useState<'writeoff' | 'keepopen' | 'dispute'>('writeoff');
   const [resolutionNote, setResolutionNote] = useState('');
+  const [arResult, setArResult] = useState<AREngineResult | null>(null);
   const { toast } = useToast();
 
+  React.useEffect(() => {
+    let cancelled = false;
+    arService.getARReconciliation().then((res) => {
+      if (!cancelled) setArResult(res);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   const exceptionsList: ARExceptionItem[] = useMemo(() => {
-    const raw = MOCK_AR_RESULT.exceptions || [];
+    const raw = arResult?.exceptions || [];
     return [
       {
         id: 'EXC-001',
