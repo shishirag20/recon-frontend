@@ -1,9 +1,9 @@
 import React, { type ReactNode, type ComponentType } from 'react';
 import { clsx } from 'clsx';
 
-interface ButtonProps {
-  variant?: 'primary' | 'ghost' | 'bad';
-  size?: 'default' | 'sm';
+export interface ButtonProps {
+  variant?: 'primary' | 'ghost' | 'bad' | 'success' | 'warning';
+  size?: 'default' | 'sm' | 'xs';
   icon?: ComponentType<{ className?: string }>;
   iconRight?: ComponentType<{ className?: string }>;
   disabled?: boolean;
@@ -12,6 +12,7 @@ interface ButtonProps {
   className?: string;
   type?: 'button' | 'submit' | 'reset';
   id?: string;
+  title?: string;
   'aria-label'?: string;
 }
 
@@ -26,6 +27,7 @@ export const Button: React.FC<ButtonProps> = ({
   className,
   type = 'button',
   id,
+  title,
   'aria-label': ariaLabel,
 }) => {
   const baseClass =
@@ -36,10 +38,21 @@ export const Button: React.FC<ButtonProps> = ({
       ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-xs'
       : variant === 'bad'
       ? 'bg-red-50 text-red-700 border border-red-200 hover:bg-red-100'
+      : variant === 'success'
+      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
+      : variant === 'warning'
+      ? 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
       : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:text-slate-900';
 
   const sizeClass =
-    size === 'sm' ? 'h-8 px-3 text-xs' : 'h-9 px-4 text-sm';
+    size === 'xs'
+      ? 'h-6 px-2.5 text-[10px] rounded-md gap-1 font-bold'
+      : size === 'sm'
+      ? 'h-8 px-3 text-xs'
+      : 'h-9 px-4 text-sm';
+
+  const iconSizeClass =
+    size === 'xs' ? 'w-3 h-3' : size === 'sm' ? 'w-3.5 h-3.5' : 'w-4 h-4';
 
   const disabledClass = disabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : '';
 
@@ -49,12 +62,13 @@ export const Button: React.FC<ButtonProps> = ({
       type={type}
       disabled={disabled}
       onClick={onClick}
+      title={title}
       aria-label={ariaLabel}
       className={clsx(baseClass, variantClass, sizeClass, disabledClass, className)}
     >
-      {IconLeft && <IconLeft className={size === 'sm' ? 'w-3.5 h-3.5' : 'w-4 h-4'} />}
+      {IconLeft && <IconLeft className={iconSizeClass} />}
       {children}
-      {IconRight && <IconRight className={size === 'sm' ? 'w-3.5 h-3.5' : 'w-4 h-4'} />}
+      {IconRight && <IconRight className={iconSizeClass} />}
     </button>
   );
 };

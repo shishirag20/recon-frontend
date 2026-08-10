@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { KpiCard } from '../ui/KpiCard';
+import { Button } from '../ui/Button';
 import {
   Landmark,
   UploadCloud,
@@ -432,26 +433,28 @@ export const JobsTab: React.FC<JobsTabProps> = ({
                           </span>
                         )}
                         {!isPromoted && !isPromoting && (job.status === 'SUCCESS' || job.status === 'PARTIAL') && (
-                          <button
+                          <Button
+                            variant="success"
+                            size="xs"
+                            icon={ArrowUpCircle}
                             onClick={() => handlePromote(job.job_id)}
                             disabled={actioningJobId === job.job_id}
                             title="Promote staged records to canonical tables"
-                            className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 disabled:opacity-50 transition-colors"
                           >
-                            <ArrowUpCircle className="w-3 h-3" />
                             Promote
-                          </button>
+                          </Button>
                         )}
                         {job.status === 'FAILED' && (
-                          <button
+                          <Button
+                            variant="warning"
+                            size="xs"
+                            icon={RefreshCw}
                             onClick={() => handleRetry(job.job_id)}
                             disabled={actioningJobId === job.job_id}
                             title="Reset and retry this failed job"
-                            className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-md bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 disabled:opacity-50 transition-colors"
                           >
-                            <RefreshCw className="w-3 h-3" />
                             Retry
-                          </button>
+                          </Button>
                         )}
                         {(job.status === 'PENDING' || job.status === 'RUNNING') && (
                           <span className="text-[10px] text-slate-400 font-medium">Processing…</span>

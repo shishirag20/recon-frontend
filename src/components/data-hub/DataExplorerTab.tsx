@@ -405,29 +405,33 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
                       </td>
                       <td className="px-4 py-3 text-right">
                         {isEditing ? (
-                          <button
+                          <Button
+                            variant="success"
+                            size="xs"
+                            icon={Check}
                             onClick={() => handleSaveEdit(r.staging_id)}
-                            className="text-emerald-600 hover:text-emerald-800 p-1.5 rounded-md hover:bg-emerald-50 font-bold transition-colors inline-flex items-center gap-1"
                             title="Save inline correction"
                           >
-                            <Check className="w-4 h-4" /> Save
-                          </button>
+                            Save
+                          </Button>
                         ) : (
                           <div className="flex items-center justify-end gap-1">
-                            <button
+                            <Button
+                              variant="ghost"
+                              size="xs"
+                              icon={Edit2}
                               onClick={() => handleStartEdit(r)}
-                              className="text-slate-400 hover:text-indigo-600 p-1 rounded-md hover:bg-slate-100 transition-colors"
                               title="Inline edit record"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
+                              className="px-1.5 border-none shadow-none text-slate-400 hover:text-indigo-600"
+                            />
+                            <Button
+                              variant="ghost"
+                              size="xs"
+                              icon={Trash2}
                               onClick={() => onDeleteRow(r.staging_id)}
-                              className="text-slate-400 hover:text-red-600 p-1 rounded-md hover:bg-slate-100 transition-colors"
                               title="Delete record"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                              className="px-1.5 border-none shadow-none text-slate-400 hover:text-red-600"
+                            />
                           </div>
                         )}
                       </td>
