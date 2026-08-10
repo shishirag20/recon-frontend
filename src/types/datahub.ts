@@ -25,11 +25,26 @@ export type TransformType =
 export const STREAM_BY_CATEGORY: Record<string, IngestionStream> = {
   'Bank Statements': 'BANK',
   'General Ledger': 'LEDGER',
+  'Sub-ledger': 'INVOICE',
   'AR Sub-ledger': 'INVOICE',
   'AP Sub-ledger': 'INVOICE',
   'Gateway Settlements': 'GATEWAY',
   'Customer Master': 'CUSTOMER',
 };
+
+export function getStreamByCategory(categoryName: string): IngestionStream {
+  if (!categoryName) return 'BANK';
+  const direct = STREAM_BY_CATEGORY[categoryName];
+  if (direct) return direct;
+
+  const lower = categoryName.toLowerCase();
+  if (lower.includes('bank')) return 'BANK';
+  if (lower.includes('ledger') && !lower.includes('sub')) return 'LEDGER';
+  if (lower.includes('sub') || lower.includes('invoice') || lower.includes('ar') || lower.includes('ap')) return 'INVOICE';
+  if (lower.includes('gateway') || lower.includes('settlement')) return 'GATEWAY';
+  if (lower.includes('customer')) return 'CUSTOMER';
+  return 'BANK';
+}
 
 // ── Data Sources ─────────────────────────────────────────────────────────────
 

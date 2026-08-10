@@ -9,7 +9,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import type { IngestionJobOut, DataSourceOut, FieldMappingIn } from '../../types/datahub';
-import { STREAM_BY_CATEGORY } from '../../types/datahub';
+import { getStreamByCategory } from '../../types/datahub';
 import { useDataHubStore } from '../../store/useDataHubStore';
 import { ingestionJobService, dataSourceService } from '../../services';
 import { useToast } from '../../hooks/useToast';
@@ -84,7 +84,7 @@ export const JobsTab: React.FC<JobsTabProps> = ({
   // ── Handle Card Click ➔ Native OS File Dialog Trigger ───────────────────────
   const handleCardClick = (sourceId: string, categoryName: string) => {
     setActiveUploadingSourceId(sourceId);
-    const stream = STREAM_BY_CATEGORY[categoryName] || 'BANK';
+    const stream = getStreamByCategory(categoryName);
     setActiveUploadingStream(stream);
 
     if (fileInputRef.current) {

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Modal } from '../layout/Modal';
 import { DATA_HUB_CATEGORIES } from '../../types';
-import { STREAM_BY_CATEGORY } from '../../types/datahub';
+import { getStreamByCategory } from '../../types/datahub';
 import { useDataHubStore } from '../../store/useDataHubStore';
 import { ingestionJobService } from '../../services';
 import type { IngestionJobOut } from '../../types/datahub';
@@ -120,7 +120,7 @@ export const IngestJobModal: React.FC<IngestJobModalProps> = ({
       if (!file || !activeCategory) return;
 
       const sourceId = getSourceId(activeCategory) ?? `mock-src-${activeCategory.toLowerCase().replace(/\s+/g, '-')}`;
-      const stream = STREAM_BY_CATEGORY[activeCategory] ?? 'BANK';
+      const stream = getStreamByCategory(activeCategory);
 
       setPhase({ type: 'UPLOADING' });
 

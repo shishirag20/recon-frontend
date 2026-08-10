@@ -38,7 +38,7 @@ const CATEGORY_ALIAS_MAP: Record<string, string[]> = {
   'AR Sub-ledger': ['Sub-ledger', 'AR Sub-ledger', 'AR'],
   'AP Sub-ledger': ['Sub-ledger', 'AP Sub-ledger', 'AP'],
   'Gateway Settlements': ['Gateway Settlements', 'GATEWAY'],
-  'Customer Master': ['Customer Master Feed', 'Customer Master'],
+  'Customer Master': ['Customer Master'],
 };
 
 // Seeded UUID fallbacks matching backend DB data_sources table

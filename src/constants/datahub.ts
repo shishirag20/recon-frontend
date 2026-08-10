@@ -48,7 +48,6 @@ export const CATEGORY_DESCRIPTIONS: Record<string, string> = {
   'Sub-ledger': 'Accounts receivable & payable sub-ledgers, vendor bills & open invoices',
   'AR Sub-ledger': 'Accounts receivable sub-ledger & customer open invoices',
   'AP Sub-ledger': 'Accounts payable sub-ledger, vendor bills & PO records',
-  'Customer Master Feed': 'Customer master database, GSTIN/PAN & bank account mapping',
   'Customer Master': 'Customer master database, GSTIN/PAN & bank account mapping',
   'Gateway Settlements': 'Payment gateway settlement reports (Stripe, Razorpay, PayPal)',
 };
@@ -59,7 +58,6 @@ export const CATEGORY_COLORS: Record<string, string> = {
   'Sub-ledger': 'bg-blue-50 text-blue-600 border-blue-100',
   'AR Sub-ledger': 'bg-blue-50 text-blue-600 border-blue-100',
   'AP Sub-ledger': 'bg-amber-50 text-amber-600 border-amber-100',
-  'Customer Master Feed': 'bg-sky-50 text-sky-600 border-sky-100',
   'Customer Master': 'bg-sky-50 text-sky-600 border-sky-100',
   'Gateway Settlements': 'bg-purple-50 text-purple-600 border-purple-100',
 };
