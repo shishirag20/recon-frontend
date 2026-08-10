@@ -1,11 +1,13 @@
 import React, { type ReactNode, type ComponentType } from 'react';
 import { clsx } from 'clsx';
+import { Loader2 } from 'lucide-react';
 
 export interface ButtonProps {
-  variant?: 'primary' | 'ghost' | 'bad' | 'success' | 'warning';
+  variant?: 'primary' | 'ghost' | 'bad' | 'success' | 'warning' | 'ai';
   size?: 'default' | 'sm' | 'xs';
   icon?: ComponentType<{ className?: string }>;
   iconRight?: ComponentType<{ className?: string }>;
+  loading?: boolean;
   disabled?: boolean;
   onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
   children?: ReactNode;
@@ -21,6 +23,7 @@ export const Button: React.FC<ButtonProps> = ({
   size = 'default',
   icon: IconLeft,
   iconRight: IconRight,
+  loading = false,
   disabled = false,
   onClick,
   children,
@@ -42,33 +45,40 @@ export const Button: React.FC<ButtonProps> = ({
       ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
       : variant === 'warning'
       ? 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
+      : variant === 'ai'
+      ? 'bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100'
       : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:text-slate-900';
 
   const sizeClass =
     size === 'xs'
       ? 'h-6 px-2.5 text-[10px] rounded-md gap-1 font-bold'
       : size === 'sm'
-      ? 'h-8 px-3 text-xs'
-      : 'h-9 px-4 text-sm';
+      ? 'h-8 px-3 text-xs font-semibold'
+      : 'h-9 px-4 text-sm font-semibold';
 
   const iconSizeClass =
     size === 'xs' ? 'w-3 h-3' : size === 'sm' ? 'w-3.5 h-3.5' : 'w-4 h-4';
 
-  const disabledClass = disabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : '';
+  const isActuallyDisabled = disabled || loading;
+  const disabledClass = isActuallyDisabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : '';
 
   return (
     <button
       id={id}
       type={type}
-      disabled={disabled}
+      disabled={isActuallyDisabled}
       onClick={onClick}
       title={title}
       aria-label={ariaLabel}
       className={clsx(baseClass, variantClass, sizeClass, disabledClass, className)}
     >
-      {IconLeft && <IconLeft className={iconSizeClass} />}
+      {loading ? (
+        <Loader2 className={clsx('animate-spin', iconSizeClass)} />
+      ) : (
+        IconLeft && <IconLeft className={iconSizeClass} />
+      )}
       {children}
-      {IconRight && <IconRight className={iconSizeClass} />}
+      {!loading && IconRight && <IconRight className={iconSizeClass} />}
     </button>
   );
 };

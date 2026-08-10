@@ -10,19 +10,19 @@ import {
   FileSpreadsheet,
   CheckCircle2,
 } from 'lucide-react';
-import type { IngestionJobOut, DataSourceOut } from '../../types/datahub';
+import type { IngestionJobOut, DataSourceOut, FieldMappingIn } from '../../types/datahub';
 import { STREAM_BY_CATEGORY } from '../../types/datahub';
 import { useDataHubStore } from '../../store/useDataHubStore';
 import { ingestionJobService, dataSourceService } from '../../services';
 import { useToast } from '../../hooks/useToast';
+import { FieldMappingTransformModal } from './FieldMappingTransformModal';
+import { BatchJobStartedModal } from './BatchJobStartedModal';
 import {
   CATEGORY_ICONS,
   CATEGORY_DESCRIPTIONS,
   CATEGORY_COLORS,
   STATUS_STYLES,
   STATUS_LABEL,
-  POLL_INTERVAL_MS,
-  TERMINAL_STATUSES,
   type DisplayJobStatus,
 } from '../../constants/datahub';
 
@@ -44,7 +44,6 @@ export const JobsTab: React.FC<JobsTabProps> = ({
   const [dataSources, setDataSources] = useState<DataSourceOut[]>([]);
   const [activeUploadingSourceId, setActiveUploadingSourceId] = useState<string | null>(null);
   const [activeUploadingStream, setActiveUploadingStream] = useState<string>('BANK');
-  const [pollingJobsMap, setPollingJobsMap] = useState<Record<string, { job: IngestionJobOut; text: string }>>({});
   const [actioningJobId, setActioningJobId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollTimersRef = useRef<Record<string, ReturnType<typeof setInterval>>>({});
@@ -107,6 +106,18 @@ export const JobsTab: React.FC<JobsTabProps> = ({
   const jobsToday = displayJobs.length;
   const rowsInError = displayJobs.reduce((sum, j) => sum + j.error_count, 0);
 
+  // ── 2-Step Ingestion Flow States ──────────────────────────────────────────
+  const [pendingUpload, setPendingUpload] = useState<{
+    sourceId: string;
+    categoryName: string;
+    stream: string;
+    file: File;
+  } | null>(null);
+
+  const [createdBatchJob, setCreatedBatchJob] = useState<IngestionJobOut | null>(null);
+  const [isMappingModalOpen, setIsMappingModalOpen] = useState<boolean>(false);
+  const [isBatchStartedModalOpen, setIsBatchStartedModalOpen] = useState<boolean>(false);
+
   // ── Handle Card Click ➔ Native OS File Dialog Trigger ───────────────────────
   const handleCardClick = (sourceId: string, categoryName: string) => {
     setActiveUploadingSourceId(sourceId);
@@ -119,92 +130,53 @@ export const JobsTab: React.FC<JobsTabProps> = ({
     }
   };
 
-  // ── Handle File Choice & Upload ─────────────────────────────────────────────
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // ── Handle File Choice ➔ Opens Step 1 Modal (Field mapping & transforms) ────
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !activeUploadingSourceId) return;
 
-    const sourceId = activeUploadingSourceId;
+    const sourceObj = dataSources.find((s) => s.source_id === activeUploadingSourceId);
+    const categoryName = sourceObj?.name || 'Data Source';
     const stream = activeUploadingStream;
 
-    setPollingJobsMap((prev) => ({
-      ...prev,
-      [sourceId]: {
-        job: {
-          job_id: `uploading-${Date.now()}`,
-          source_id: sourceId,
-          job_type: 'INGEST',
-          parent_job_id: null,
-          stream: stream as any,
-          file_name: file.name,
-          format: 'CSV',
-          status: 'PENDING',
-          row_count: 0,
-          error_count: 0,
-          attempt_count: 0,
-          max_attempts: 3,
-          last_error: null,
-          mapping_version: 1,
-          started_at: new Date().toISOString(),
-        },
-        text: 'Uploading file to server...',
-      },
-    }));
+    setPendingUpload({
+      sourceId: activeUploadingSourceId,
+      categoryName,
+      stream,
+      file,
+    });
+    setIsMappingModalOpen(true);
+  };
+
+  // ── Handle Confirm Mapping ➔ Uploads File & Opens Step 2 Modal (Batch Job Started) ────
+  const handleConfirmMapping = async (_mappings: FieldMappingIn[]) => {
+    if (!pendingUpload) return;
+    const { sourceId, stream, file } = pendingUpload;
 
     try {
-      const initialJob = await ingestionJobService.upload(sourceId, stream, file);
+      const job = await ingestionJobService.upload(sourceId, stream, file);
+      setIsMappingModalOpen(false);
+      setCreatedBatchJob(job);
+      setIsBatchStartedModalOpen(true);
 
-      setPollingJobsMap((prev) => ({
-        ...prev,
-        [sourceId]: {
-          job: initialJob,
-          text: 'Processing the file...',
-        },
-      }));
-
-      if (pollTimersRef.current[sourceId]) {
-        clearInterval(pollTimersRef.current[sourceId]);
-      }
-
-      pollTimersRef.current[sourceId] = setInterval(async () => {
-        try {
-          const latest = await ingestionJobService.get(initialJob.job_id);
-          upsertJobInStore(latest);
-
-          setPollingJobsMap((prev) => ({
-            ...prev,
-            [sourceId]: {
-              job: latest,
-              text:
-                latest.status === 'RUNNING' || latest.status === 'PENDING'
-                  ? 'Processing the file...'
-                  : latest.status === 'SUCCESS'
-                    ? 'Processed successfully'
-                    : latest.status === 'PARTIAL'
-                      ? 'Processed with error rows'
-                      : 'Processing failed',
-            },
-          }));
-
-          if (TERMINAL_STATUSES.has(latest.status)) {
-            clearInterval(pollTimersRef.current[sourceId]);
-            delete pollTimersRef.current[sourceId];
-            onJobComplete(latest);
-          }
-        } catch {
-          clearInterval(pollTimersRef.current[sourceId]);
-          delete pollTimersRef.current[sourceId];
-        }
-      }, POLL_INTERVAL_MS);
+      // Track in store & parent
+      upsertJobInStore(job);
+      onJobComplete(job);
     } catch (err: any) {
-      toast(err.message || 'Upload failed', 'bad');
-      setPollingJobsMap((prev) => {
-        const next = { ...prev };
-        delete next[sourceId];
-        return next;
-      });
+      toast(`Upload failed: ${err?.message || 'Server error'}`, 'bad');
     }
   };
+
+  // ── Handle Done Click on Step 2 Modal ──────────────────────────────────────
+  const handleBatchJobDone = (finalJob: IngestionJobOut) => {
+    setIsBatchStartedModalOpen(false);
+    upsertJobInStore(finalJob);
+    onJobComplete(finalJob);
+    setPendingUpload(null);
+    setCreatedBatchJob(null);
+  };
+
+
 
   const handlePromote = async (jobId: string) => {
     setActioningJobId(jobId);
@@ -220,7 +192,6 @@ export const JobsTab: React.FC<JobsTabProps> = ({
 
   // Helper to find the latest INGEST job for a data source
   const getLatestJobForSource = (sourceId: string): (IngestionJobOut & { displayStatus?: DisplayJobStatus }) | undefined => {
-    if (pollingJobsMap[sourceId]) return pollingJobsMap[sourceId].job;
     return displayJobs.find((j) => j.source_id === sourceId || j.source_id === null);
   };
 
@@ -273,17 +244,13 @@ export const JobsTab: React.FC<JobsTabProps> = ({
             const description = CATEGORY_DESCRIPTIONS[ds.name] || `Ingest statement file for ${ds.name}`;
             const colorClass = CATEGORY_COLORS[ds.name] || 'bg-indigo-50 text-indigo-600 border-indigo-100';
 
-            const activePollState = pollingJobsMap[ds.source_id];
             const latestJob = getLatestJobForSource(ds.source_id);
-            const isPolling = activePollState && !TERMINAL_STATUSES.has(activePollState.job.status);
-            const statusKey = latestJob?.displayStatus || latestJob?.status || 'PENDING';
 
             return (
               <div
                 key={ds.source_id}
-                onClick={() => !isPolling && handleCardClick(ds.source_id, ds.name)}
-                className={`group bg-white border border-slate-200 hover:border-indigo-600 hover:shadow-md p-4 rounded-xl cursor-pointer transition-all duration-150 flex flex-col justify-between gap-3 ${isPolling ? 'ring-2 ring-indigo-500/20 border-indigo-400' : ''
-                  }`}
+                onClick={() => handleCardClick(ds.source_id, ds.name)}
+                className="group bg-white border border-slate-200 hover:border-indigo-600 hover:shadow-md p-4 rounded-xl cursor-pointer transition-all duration-150 flex flex-col justify-between gap-3"
               >
                 {/* Top Card Info */}
                 <div className="flex items-start gap-3.5">
@@ -308,12 +275,7 @@ export const JobsTab: React.FC<JobsTabProps> = ({
 
                 {/* Upload Status / Uploaded File Indicator Banner */}
                 <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-                  {isPolling ? (
-                    <div className="flex items-center gap-2 text-indigo-600 font-semibold">
-                      <Loader2 className="w-4 h-4 animate-spin flex-none" />
-                      <span className="truncate">{activePollState?.text || 'Processing...'}</span>
-                    </div>
-                  ) : latestJob && latestJob.file_name ? (
+                  {latestJob && latestJob.file_name ? (
                     <div className="flex items-center justify-between w-full">
                       <div className="flex items-center gap-2 text-slate-700 min-w-0">
                         <FileSpreadsheet className="w-4 h-4 text-indigo-600 flex-none" />
@@ -474,6 +436,31 @@ export const JobsTab: React.FC<JobsTabProps> = ({
           </table>
         </div>
       </div>
+      {/* Step 1: Field Mapping & Transforms Modal */}
+      {pendingUpload && (
+        <FieldMappingTransformModal
+          isOpen={isMappingModalOpen}
+          onClose={() => {
+            setIsMappingModalOpen(false);
+            setPendingUpload(null);
+          }}
+          sourceId={pendingUpload.sourceId}
+          categoryName={pendingUpload.categoryName}
+          fileName={pendingUpload.file.name}
+          onConfirmMapping={handleConfirmMapping}
+        />
+      )}
+
+      {/* Step 2: Batch Job Started Modal */}
+      {createdBatchJob && (
+        <BatchJobStartedModal
+          isOpen={isBatchStartedModalOpen}
+          onClose={() => setIsBatchStartedModalOpen(false)}
+          job={createdBatchJob}
+          categoryName={pendingUpload?.categoryName || 'Data Source'}
+          onDone={handleBatchJobDone}
+        />
+      )}
     </div>
   );
 };
