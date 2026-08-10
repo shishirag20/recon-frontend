@@ -4,6 +4,7 @@ import { Button } from '../ui/Button';
 import { Play, Check, CheckCircle2 } from 'lucide-react';
 import { ingestionJobService } from '../../services/dataHub.service';
 import type { IngestionJobOut } from '../../types/datahub';
+import { POLL_INTERVAL_MS, TERMINAL_STATUSES } from '../../constants/datahub';
 
 interface BatchJobStartedModalProps {
   isOpen: boolean;
@@ -35,7 +36,7 @@ export const BatchJobStartedModal: React.FC<BatchJobStartedModalProps> = ({
       try {
         const latest = await ingestionJobService.get(initialJob.job_id);
         setCurrentJob(latest);
-        if (latest.status === 'SUCCESS' || latest.status === 'PARTIAL' || latest.status === 'FAILED') {
+        if (TERMINAL_STATUSES.has(latest.status)) {
           if (pollTimerRef.current) clearInterval(pollTimerRef.current);
         }
       } catch {
@@ -43,7 +44,10 @@ export const BatchJobStartedModal: React.FC<BatchJobStartedModalProps> = ({
       }
     };
 
-    pollTimerRef.current = setInterval(poll, 2500);
+    // Immediate initial poll call
+    poll();
+
+    pollTimerRef.current = setInterval(poll, POLL_INTERVAL_MS);
     return () => {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     };

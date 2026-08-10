@@ -12,6 +12,8 @@ import { dataSourceService, ingestionJobService } from '../services';
 import type { FieldMapping } from '../types';
 import type { IngestionJobOut } from '../types/datahub';
 
+import { POLL_INTERVAL_MS } from '../constants/datahub';
+
 const DATA_HUB_TABS: TabItem[] = [
   { key: 'jobs', label: 'Ingestion Jobs' },
   { key: 'schemas', label: 'Schemas & Validation' },
@@ -49,6 +51,28 @@ export const DataHubPage: React.FC = () => {
     init();
     return () => { cancelled = true; };
   }, [setSources, setJobs]);
+
+
+
+  // ── Poll pending/running jobs periodically until all reach terminal status ──
+  useEffect(() => {
+    const hasActiveJobs = jobs.some(
+      (j) => j.status === 'PENDING' || j.status === 'RUNNING'
+    );
+
+    if (!hasActiveJobs) return;
+
+    const intervalId = setInterval(async () => {
+      try {
+        const freshJobs = await ingestionJobService.list();
+        setJobs(freshJobs);
+      } catch {
+        // Silently ignore poll errors
+      }
+    }, POLL_INTERVAL_MS);
+
+    return () => clearInterval(intervalId);
+  }, [jobs, setJobs]);
 
   // ── Handler: called on successful upload + polling done ──────────────────
   const handleJobComplete = (job: IngestionJobOut) => {
