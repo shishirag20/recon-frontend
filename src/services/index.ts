@@ -9,6 +9,7 @@ export {
   dataSourceService,
   fieldMappingService,
   ingestionJobService,
+  recordsService,
   stagingService,
 } from './dataHub.service';
 export { intercompanyService } from './intercompany.service';

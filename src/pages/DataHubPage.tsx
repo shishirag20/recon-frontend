@@ -50,11 +50,11 @@ export const DataHubPage: React.FC = () => {
     return () => { cancelled = true; };
   }, [setSources, setJobs]);
 
-  // ── Handler: called by IngestJobModal on successful upload + polling done ──
+  // ── Handler: called on successful upload + polling done ──────────────────
   const handleJobComplete = (job: IngestionJobOut) => {
     upsertJob(job);
     toast(
-      `✓ "${job.file_name}" ingested — ${job.row_count} rows staged${job.error_count > 0 ? `, ${job.error_count} need review` : ''}`,
+      `✓ "${job.file_name}" ingested — ${job.row_count} canonical rows ingested${job.error_count > 0 ? `, ${job.error_count} failed` : ''}`,
       job.error_count > 0 ? 'warn' : 'ok'
     );
   };
@@ -64,17 +64,7 @@ export const DataHubPage: React.FC = () => {
     setActiveTab('explorer');
   };
 
-  // ── Handler: promote job ──────────────────────────────────────────────────
-  const handlePromote = async (jobId: string) => {
-    try {
-      const promoted = await ingestionJobService.promote(jobId);
-      upsertJob(promoted);
-      toast('Promotion job dispatched — records moving to canonical tables.', 'ok');
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Promotion failed';
-      toast(msg, 'bad');
-    }
-  };
+
 
   // ── Handler: retry failed job ─────────────────────────────────────────────
   const handleRetry = async (jobId: string) => {
@@ -140,7 +130,6 @@ export const DataHubPage: React.FC = () => {
             jobs={jobs}
             onViewJob={handleViewJob}
             onJobComplete={handleJobComplete}
-            onPromote={handlePromote}
             onRetry={handleRetry}
           />
         )}

@@ -5,7 +5,7 @@
 export const IS_MOCK = import.meta.env.VITE_USE_MOCK_DATA !== 'false';
 
 export const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+  import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 export const AUTH_TOKEN_KEY =
   import.meta.env.VITE_AUTH_TOKEN_KEY || 'recon_auth_token';
@@ -38,9 +38,8 @@ export const API_ROUTES = {
     INGESTION_JOBS: `/ingestion-jobs`,
     INGESTION_JOB: (id: string) => `/ingestion-jobs/${id}`,
     INGESTION_JOB_RETRY: (id: string) => `/ingestion-jobs/${id}/retry`,
-    INGESTION_JOB_PROMOTE: (id: string) => `/ingestion-jobs/${id}/promote`,
-    INGESTION_JOB_STAGING: (id: string) => `/ingestion-jobs/${id}/staging-records`,
-    STAGING_RECORD: (id: string) => `/staging-records/${id}`,
+    INGESTION_JOB_RECORDS: (id: string) => `/ingestion-jobs/${id}/records`,
+    INGESTION_JOB_RECORD: (jobId: string, recordId: string) => `/ingestion-jobs/${jobId}/records/${recordId}`,
   },
   // Reports & Audit
   REPORTS: {

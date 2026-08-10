@@ -1,11 +1,11 @@
 /**
  * DataHub Service Layer
  * 
- * Covers all 15 DataHub API endpoints split into four domain groups:
+ * Covers all DataHub API endpoints split into four domain groups:
  *  - dataSourceService  — Data Source registration & lookup
- *  - fieldMappingService — Active mappings fetch + preview
- *  - ingestionJobService — File upload, list, poll, retry, promote
- *  - stagingService      — List, get, and patch staging records
+ *  - fieldMappingService — Active mappings fetch, save version + preview
+ *  - ingestionJobService — File upload, list, poll, retry
+ *  - recordsService      — List, get, and patch live canonical job records
  * 
  * Includes client-side in-memory caching to prevent duplicate API requests.
  */
@@ -14,21 +14,22 @@ import { api } from './api/client';
 import type {
   DataSourceOut,
   FieldMappingOut,
+  FieldMappingIn,
   MappingPreviewRequest,
   MappingPreviewResponse,
   IngestionJobOut,
-  StagingRecordOut,
-  StagingRecordUpdate,
+  CanonicalRecordOut,
+  CanonicalRecordUpdate,
 } from '../types/datahub';
 
 let dataSourcesCache: DataSourceOut[] | null = null;
 const fieldMappingsCache = new Map<string, FieldMappingOut[]>();
-const stagingRecordsCache = new Map<string, StagingRecordOut[]>();
+const canonicalRecordsCache = new Map<string, CanonicalRecordOut[]>();
 
 export function clearDataHubServiceCaches() {
   dataSourcesCache = null;
   fieldMappingsCache.clear();
-  stagingRecordsCache.clear();
+  canonicalRecordsCache.clear();
 }
 
 // ── Data Sources ────────────────────────────────────────────────────────────────
@@ -45,6 +46,29 @@ export const dataSourceService = {
     const res = await api.get<DataSourceOut[]>(API_ROUTES.DATA_HUB.DATA_SOURCES);
     dataSourcesCache = res;
     return res;
+  },
+
+  /**
+   * GET /data-sources/{source_id} — Get details for a single data source.
+   */
+  async get(sourceId: string): Promise<DataSourceOut> {
+    return api.get<DataSourceOut>(API_ROUTES.DATA_HUB.DATA_SOURCE(sourceId));
+  },
+
+  /**
+   * POST /data-sources — Create a new data source.
+   */
+  async create(payload: { entity_id: string; name: string; kind: string }): Promise<DataSourceOut> {
+    dataSourcesCache = null;
+    return api.post<DataSourceOut>(API_ROUTES.DATA_HUB.DATA_SOURCES, payload);
+  },
+
+  /**
+   * PATCH /data-sources/{source_id} — Update data source details.
+   */
+  async update(sourceId: string, payload: { name?: string; status?: string }): Promise<DataSourceOut> {
+    dataSourcesCache = null;
+    return api.patch<DataSourceOut>(API_ROUTES.DATA_HUB.DATA_SOURCE(sourceId), payload);
   },
 };
 
@@ -65,6 +89,15 @@ export const fieldMappingService = {
   },
 
   /**
+   * POST /data-sources/{source_id}/field-mappings/versions
+   * Create a new mapping version for a data source.
+   */
+  async createVersion(sourceId: string, mappings: FieldMappingIn[]): Promise<FieldMappingOut[]> {
+    fieldMappingsCache.delete(sourceId);
+    return api.post<FieldMappingOut[]>(API_ROUTES.DATA_HUB.FIELD_MAPPING_VERSIONS(sourceId), { mappings });
+  },
+
+  /**
    * POST /data-sources/{source_id}/field-mappings/preview
    * Dry-run mapping rules against sample rows.
    */
@@ -77,7 +110,7 @@ export const fieldMappingService = {
 
 export const ingestionJobService = {
   /**
-   * GET /ingestion-jobs — List all ingestion and promotion jobs.
+   * GET /ingestion-jobs — List all ingestion jobs.
    */
   async list(params?: { source_id?: string; status?: string; limit?: number; offset?: number }): Promise<IngestionJobOut[]> {
     return api.get<IngestionJobOut[]>(API_ROUTES.DATA_HUB.INGESTION_JOBS, { params });
@@ -91,7 +124,7 @@ export const ingestionJobService = {
   },
 
   /**
-   * POST /ingestion-jobs — Upload a CSV file for background ingestion.
+   * POST /ingestion-jobs — Upload a CSV file for direct background ingestion.
    */
   async upload(sourceId: string, stream: string, file: File): Promise<IngestionJobOut> {
     const form = new FormData();
@@ -100,8 +133,8 @@ export const ingestionJobService = {
     form.append('format', 'CSV');
     form.append('file', file);
 
-    // Invalidate staging cache when new job uploaded
-    stagingRecordsCache.clear();
+    // Invalidate canonical records cache when new job uploaded
+    canonicalRecordsCache.clear();
     return api.postForm<IngestionJobOut>(API_ROUTES.DATA_HUB.INGESTION_JOBS, form);
   },
 
@@ -111,49 +144,61 @@ export const ingestionJobService = {
   async retry(jobId: string): Promise<IngestionJobOut> {
     return api.post<IngestionJobOut>(API_ROUTES.DATA_HUB.INGESTION_JOB_RETRY(jobId));
   },
-
-  /**
-   * POST /ingestion-jobs/{job_id}/promote — Promote staged records to canonical tables.
-   */
-  async promote(jobId: string): Promise<IngestionJobOut> {
-    return api.post<IngestionJobOut>(API_ROUTES.DATA_HUB.INGESTION_JOB_PROMOTE(jobId));
-  },
 };
 
-// ── Staging Records ─────────────────────────────────────────────────────────────
+// ── Canonical Records (Data Explorer) ─────────────────────────────────────────────
 
-export const stagingService = {
+export const recordsService = {
   /**
-   * GET /ingestion-jobs/{job_id}/staging-records
+   * GET /ingestion-jobs/{job_id}/records
    * Caches in-memory by jobId + valid filter.
    */
   async list(
     jobId: string,
     params?: { valid?: boolean; search?: string; limit?: number; offset?: number },
     forceRefresh = false
-  ): Promise<StagingRecordOut[]> {
+  ): Promise<CanonicalRecordOut[]> {
     const cacheKey = `${jobId}_valid_${params?.valid ?? 'all'}`;
 
-    if (stagingRecordsCache.has(cacheKey) && !forceRefresh && !params?.search) {
-      return Promise.resolve(stagingRecordsCache.get(cacheKey)!);
+    if (canonicalRecordsCache.has(cacheKey) && !forceRefresh && !params?.search) {
+      return Promise.resolve(canonicalRecordsCache.get(cacheKey)!);
     }
 
-    const res = await api.get<StagingRecordOut[]>(API_ROUTES.DATA_HUB.INGESTION_JOB_STAGING(jobId), {
-      params: params as Record<string, string | number | boolean | undefined>,
-    });
+    const res = await api.get<CanonicalRecordOut[]>(
+      API_ROUTES.DATA_HUB.INGESTION_JOB_RECORDS(jobId),
+      { params: params as Record<string, string | number | boolean | undefined> }
+    );
 
     if (!params?.search) {
-      stagingRecordsCache.set(cacheKey, res);
+      canonicalRecordsCache.set(cacheKey, res);
     }
     return res;
   },
 
   /**
-   * PATCH /staging-records/{staging_id} — Correct a staging record's canonical fields.
-   * Clears stagingRecordsCache on edit to ensure fresh data.
+   * GET /ingestion-jobs/{job_id}/records/{record_id}
    */
-  async patch(stagingId: string, update: StagingRecordUpdate): Promise<StagingRecordOut> {
-    stagingRecordsCache.clear();
-    return api.patch<StagingRecordOut>(API_ROUTES.DATA_HUB.STAGING_RECORD(stagingId), update);
+  async get(jobId: string, recordId: string): Promise<CanonicalRecordOut> {
+    return api.get<CanonicalRecordOut>(
+      API_ROUTES.DATA_HUB.INGESTION_JOB_RECORD(jobId, recordId)
+    );
+  },
+
+  /**
+   * PATCH /ingestion-jobs/{job_id}/records/{record_id} — Correct a record's canonical fields.
+   */
+  async patch(
+    jobId: string,
+    recordId: string,
+    update: CanonicalRecordUpdate
+  ): Promise<CanonicalRecordOut> {
+    canonicalRecordsCache.clear();
+    return api.patch<CanonicalRecordOut>(
+      API_ROUTES.DATA_HUB.INGESTION_JOB_RECORD(jobId, recordId),
+      update
+    );
   },
 };
+
+// Backwards-compatibility alias for stagingService
+export const stagingService = recordsService;

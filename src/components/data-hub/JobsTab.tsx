@@ -4,9 +4,7 @@ import { Button } from '../ui/Button';
 import {
   Landmark,
   UploadCloud,
-  Loader2,
   RefreshCw,
-  ArrowUpCircle,
   FileSpreadsheet,
   CheckCircle2,
 } from 'lucide-react';
@@ -23,14 +21,12 @@ import {
   CATEGORY_COLORS,
   STATUS_STYLES,
   STATUS_LABEL,
-  type DisplayJobStatus,
 } from '../../constants/datahub';
 
 interface JobsTabProps {
   jobs: IngestionJobOut[];
   onViewJob: (jobId: string) => void;
   onJobComplete: (job: IngestionJobOut) => void;
-  onPromote: (jobId: string) => void;
   onRetry: (jobId: string) => void;
 }
 
@@ -38,7 +34,6 @@ export const JobsTab: React.FC<JobsTabProps> = ({
   jobs,
   onViewJob,
   onJobComplete,
-  onPromote,
   onRetry,
 }) => {
   const [dataSources, setDataSources] = useState<DataSourceOut[]>([]);
@@ -70,39 +65,7 @@ export const JobsTab: React.FC<JobsTabProps> = ({
     };
   }, [sourcesList, setSourcesInStore]);
 
-  // ── Aggregate INGEST jobs with child PROMOTE jobs ───────────────────────────
-  const processDisplayJobs = (rawJobs: IngestionJobOut[]) => {
-    const promoteMap = new Map<string, IngestionJobOut>();
-
-    rawJobs.forEach((j) => {
-      if (j.job_type === 'PROMOTE' && j.parent_job_id) {
-        promoteMap.set(j.parent_job_id, j);
-      }
-    });
-
-    return rawJobs
-      .filter((j) => j.job_type === 'INGEST')
-      .map((j) => {
-        const childPromote = promoteMap.get(j.job_id);
-        let displayStatus: DisplayJobStatus = j.status;
-
-        if (childPromote) {
-          if (childPromote.status === 'SUCCESS') {
-            displayStatus = 'PROMOTED';
-          } else if (childPromote.status === 'RUNNING' || childPromote.status === 'PENDING') {
-            displayStatus = 'PROMOTING';
-          }
-        }
-
-        return {
-          ...j,
-          displayStatus,
-          childPromote,
-        };
-      });
-  };
-
-  const displayJobs = processDisplayJobs(jobs);
+  const displayJobs = jobs;
   const jobsToday = displayJobs.length;
   const rowsInError = displayJobs.reduce((sum, j) => sum + j.error_count, 0);
 
@@ -178,20 +141,14 @@ export const JobsTab: React.FC<JobsTabProps> = ({
 
 
 
-  const handlePromote = async (jobId: string) => {
-    setActioningJobId(jobId);
-    await onPromote(jobId);
-    setActioningJobId(null);
-  };
-
   const handleRetry = async (jobId: string) => {
     setActioningJobId(jobId);
     await onRetry(jobId);
     setActioningJobId(null);
   };
 
-  // Helper to find the latest INGEST job for a data source
-  const getLatestJobForSource = (sourceId: string): (IngestionJobOut & { displayStatus?: DisplayJobStatus }) | undefined => {
+  // Helper to find the latest job for a data source
+  const getLatestJobForSource = (sourceId: string): IngestionJobOut | undefined => {
     return displayJobs.find((j) => j.source_id === sourceId || j.source_id === null);
   };
 
@@ -343,9 +300,7 @@ export const JobsTab: React.FC<JobsTabProps> = ({
             </thead>
             <tbody className="divide-y divide-slate-100">
               {displayJobs.map((job) => {
-                const statusKey = job.displayStatus;
-                const isPromoted = statusKey === 'PROMOTED';
-                const isPromoting = statusKey === 'PROMOTING';
+                const statusKey = job.status;
 
                 return (
                   <tr
@@ -357,8 +312,8 @@ export const JobsTab: React.FC<JobsTabProps> = ({
                       {job.file_name || '—'}
                     </td>
                     <td className="px-4 py-3">
-                      <span className="text-[11px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded border border-slate-200 font-medium capitalize">
-                        {job.job_type.toLowerCase()}
+                      <span className="text-[11px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded border border-slate-200 font-semibold uppercase">
+                        {job.stream || 'BANK'}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-slate-600 font-medium">{job.format || '—'}</td>
@@ -371,8 +326,8 @@ export const JobsTab: React.FC<JobsTabProps> = ({
                       </span>
                     </td>
                     <td className="px-4 py-3 text-center">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${STATUS_STYLES[statusKey]}`}>
-                        {STATUS_LABEL[statusKey]}
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${STATUS_STYLES[statusKey] || 'bg-slate-100 text-slate-700'}`}>
+                        {STATUS_LABEL[statusKey] || statusKey}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right font-mono text-slate-400">
@@ -381,29 +336,11 @@ export const JobsTab: React.FC<JobsTabProps> = ({
                     {/* Action Buttons — stop row click propagation */}
                     <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-center gap-1.5">
-                        {isPromoted && (
-                          <span className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200">
-                            <CheckCircle2 className="w-3 h-3 text-indigo-600" />
-                            Promoted
+                        {(job.status === 'SUCCESS' || job.status === 'PARTIAL') && (
+                          <span className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            Ingested
                           </span>
-                        )}
-                        {isPromoting && (
-                          <span className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-md bg-sky-50 text-sky-700 border border-sky-200">
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                            Promoting…
-                          </span>
-                        )}
-                        {!isPromoted && !isPromoting && (job.status === 'SUCCESS' || job.status === 'PARTIAL') && (
-                          <Button
-                            variant="success"
-                            size="xs"
-                            icon={ArrowUpCircle}
-                            onClick={() => handlePromote(job.job_id)}
-                            disabled={actioningJobId === job.job_id}
-                            title="Promote staged records to canonical tables"
-                          >
-                            Promote
-                          </Button>
                         )}
                         {job.status === 'FAILED' && (
                           <Button

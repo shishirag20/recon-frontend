@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from '../ui/Button';
-import { FileText, Search, Plus, ChevronUp, ChevronDown, Trash2, Filter, ArrowUpCircle, Check, Edit2, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
+import { FileText, Search, Plus, ChevronUp, ChevronDown, Trash2, Filter, Check, Edit2, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { StatusPill } from '../ui/StatusPill';
-import { stagingService, ingestionJobService } from '../../services';
+import { recordsService } from '../../services';
 import { useToast } from '../../hooks/useToast';
-import type { IngestionJobOut, StagingRecordOut } from '../../types/datahub';
+import type { IngestionJobOut, CanonicalRecordOut } from '../../types/datahub';
 
 interface DataExplorerTabProps {
   jobs: IngestionJobOut[];
@@ -17,12 +17,11 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
   onInsertRow,
   onDeleteRow,
 }) => {
-  // Only render INGEST jobs as tabs to prevent child PROMOTE jobs from creating blank duplicate tabs
-  const ingestJobs = jobs.filter((j) => j.job_type === 'INGEST');
+  const ingestJobs = jobs;
 
-  // Active selected job ID (defaults to first real ingest job or empty)
+  // Active selected job ID
   const [activeJobId, setActiveJobId] = useState<string>(ingestJobs[0]?.job_id || '');
-  const [stagingRecords, setStagingRecords] = useState<StagingRecordOut[]>([]);
+  const [canonicalRecords, setCanonicalRecords] = useState<CanonicalRecordOut[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showErrorsOnly, setShowErrorsOnly] = useState(false);
@@ -30,66 +29,55 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [currentPage, setCurrentPage] = useState(1);
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
-  const [editFormData, setEditFormData] = useState<Partial<StagingRecordOut>>({});
-  const [isPromoting, setIsPromoting] = useState(false);
+  const [editFormData, setEditFormData] = useState<Partial<CanonicalRecordOut>>({});
   const pageSize = 8;
   const { toast } = useToast();
 
-  // Check if active selected job is already promoted or actively promoting
-  const isAlreadyPromoted = jobs.some(
-    (j) => j.job_type === 'PROMOTE' && j.parent_job_id === activeJobId && j.status === 'SUCCESS'
-  );
-
-  const isPromotingActive = jobs.some(
-    (j) => j.job_type === 'PROMOTE' && j.parent_job_id === activeJobId && (j.status === 'RUNNING' || j.status === 'PENDING')
-  );
-
-  // If activeJobId is not set, set it to the first ingest job when jobs load
+  // If activeJobId is not set, set it to the first job when jobs load
   useEffect(() => {
     if (!activeJobId && ingestJobs.length > 0) {
       setActiveJobId(ingestJobs[0].job_id);
     }
   }, [ingestJobs, activeJobId]);
 
-  // Fetch staging records from backend for activeJobId & showErrorsOnly filter
-  const fetchStagingRecords = useCallback(async () => {
+  // Fetch canonical records from backend for activeJobId & showErrorsOnly filter
+  const fetchRecords = useCallback(async () => {
     if (!activeJobId) return;
     setIsLoading(true);
     try {
-      const records = await stagingService.list(activeJobId, {
+      const records = await recordsService.list(activeJobId, {
         valid: showErrorsOnly ? false : undefined,
       });
-      setStagingRecords(records);
+      setCanonicalRecords(records);
     } catch {
-      setStagingRecords([]);
+      setCanonicalRecords([]);
     } finally {
       setIsLoading(false);
     }
   }, [activeJobId, showErrorsOnly]);
 
   useEffect(() => {
-    fetchStagingRecords();
-  }, [fetchStagingRecords]);
+    fetchRecords();
+  }, [fetchRecords]);
 
   // Client-side search and sorting
-  const filteredRecords = stagingRecords.filter((r) => {
+  const filteredRecords = canonicalRecords.filter((r) => {
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
-    return (
-      (r.counterparty && r.counterparty.toLowerCase().includes(q)) ||
-      (r.reference && r.reference.toLowerCase().includes(q)) ||
-      (r.staging_id && r.staging_id.toLowerCase().includes(q))
-    );
+    const cp = (r.counterparty || r.payer_name || r.customer_name || r.company_name || '').toLowerCase();
+    const ref = (r.bank_reference || r.invoice_number || r.reference || '').toLowerCase();
+    const recId = (r.record_id || r.staging_id || r.statement_id || r.invoice_id || r.customer_id || '').toLowerCase();
+    return cp.includes(q) || ref.includes(q) || recId.includes(q);
   });
 
   const sortedRecords = [...filteredRecords].sort((a, b) => {
     let comp = 0;
-    const valA = a.amount_minor || 0;
-    const valB = b.amount_minor || 0;
-    const dateA = a.txn_date || '';
-    const dateB = b.txn_date || '';
-    const cpA = a.counterparty || '';
-    const cpB = b.counterparty || '';
+    const valA = a.amount_minor ?? a.total_amount_minor ?? (a.amount != null ? Math.round(a.amount * 100) : 0);
+    const valB = b.amount_minor ?? b.total_amount_minor ?? (b.amount != null ? Math.round(b.amount * 100) : 0);
+    const dateA = a.txn_date || a.statement_date || a.invoice_date || '';
+    const dateB = b.txn_date || b.statement_date || b.invoice_date || '';
+    const cpA = a.counterparty || a.payer_name || a.customer_name || a.company_name || '';
+    const cpB = b.counterparty || b.payer_name || b.customer_name || b.company_name || '';
 
     if (sortField === 'amount') comp = valA - valB;
     else if (sortField === 'date') comp = dateA.localeCompare(dateB);
@@ -112,19 +100,21 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
     }
   };
 
-  const handleStartEdit = (record: StagingRecordOut) => {
-    setEditingRecordId(record.staging_id);
+  const handleStartEdit = (record: CanonicalRecordOut) => {
+    const recId = record.record_id || record.staging_id || record.statement_id || record.invoice_id || record.customer_id || '';
+    setEditingRecordId(recId);
     setEditFormData({
-      txn_date: record.txn_date,
-      reference: record.reference,
-      counterparty: record.counterparty,
-      amount_minor: record.amount_minor,
+      txn_date: record.txn_date || record.statement_date || record.invoice_date || '',
+      reference: record.bank_reference || record.invoice_number || record.reference || '',
+      counterparty: record.counterparty || record.payer_name || record.customer_name || record.company_name || '',
+      amount_minor: record.amount_minor ?? record.total_amount_minor ?? (record.amount != null ? Math.round(record.amount * 100) : 0),
     });
   };
 
-  const handleSaveEdit = async (stagingId: string) => {
+  const handleSaveEdit = async (recId: string) => {
+    if (!activeJobId) return;
     try {
-      await stagingService.patch(stagingId, {
+      await recordsService.patch(activeJobId, recId, {
         reference: editFormData.reference,
         counterparty: editFormData.counterparty,
         txn_date: editFormData.txn_date,
@@ -133,23 +123,10 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
       });
 
       setEditingRecordId(null);
-      toast('Staging record corrected & updated!', 'ok');
-      fetchStagingRecords();
+      toast('Canonical database record updated!', 'ok');
+      fetchRecords();
     } catch {
-      toast('Failed to save correction', 'bad');
-    }
-  };
-
-  const handlePromoteJob = async () => {
-    if (!activeJobId) return;
-    setIsPromoting(true);
-    try {
-      await ingestionJobService.promote(activeJobId);
-      toast('Job promoted! Canonical database tables updated.', 'ok');
-    } catch {
-      toast('Promotion requested for job', 'ok');
-    } finally {
-      setIsPromoting(false);
+      toast('Failed to save record correction', 'bad');
     }
   };
 
@@ -225,28 +202,10 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Promote Action Button or Promoted Status Badge */}
-          {isAlreadyPromoted ? (
-            <div className="h-9 px-3.5 bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-bold rounded-lg flex items-center gap-1.5 shadow-xs">
-              <CheckCircle2 className="w-4 h-4 text-indigo-600" />
-              <span>Promoted to Engine</span>
-            </div>
-          ) : isPromotingActive || isPromoting ? (
-            <div className="h-9 px-3.5 bg-sky-50 border border-sky-200 text-sky-700 text-xs font-bold rounded-lg flex items-center gap-1.5 shadow-xs animate-pulse">
-              <Loader2 className="w-4 h-4 text-sky-600 animate-spin" />
-              <span>Promoting to Engine…</span>
-            </div>
-          ) : (
-            <Button
-              variant="primary"
-              size="sm"
-              icon={ArrowUpCircle}
-              onClick={handlePromoteJob}
-              disabled={!activeJobId}
-            >
-              Promote to Engine
-            </Button>
-          )}
+          <div className="h-9 px-3.5 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold rounded-lg flex items-center gap-1.5 shadow-xs">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            <span>Canonical Database Records</span>
+          </div>
 
           <Button variant="ghost" size="sm" icon={Plus} onClick={onInsertRow}>
             Insert Row
@@ -258,53 +217,38 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs flex flex-col">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 text-slate-500 border-b border-slate-200 font-semibold">
+            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase text-[11px] tracking-wider">
               <tr>
-                <th className="px-4 py-3">Staging ID</th>
+                <th className="px-4 py-3">Record ID</th>
                 <th
-                  className="px-4 py-3 cursor-pointer hover:text-slate-900 select-none"
+                  className="px-4 py-3 cursor-pointer hover:text-slate-900 transition-colors"
                   onClick={() => handleSort('date')}
                 >
                   <div className="flex items-center gap-1">
                     <span>Date</span>
-                    {sortField === 'date' && (
-                      sortDir === 'asc' ? (
-                        <ChevronUp className="w-3 h-3 text-indigo-600" />
-                      ) : (
-                        <ChevronDown className="w-3 h-3 text-indigo-600" />
-                      )
-                    )}
+                    {sortField === 'date' &&
+                      (sortDir === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
                   </div>
                 </th>
                 <th
-                  className="px-4 py-3 cursor-pointer hover:text-slate-900 select-none"
+                  className="px-4 py-3 cursor-pointer hover:text-slate-900 transition-colors"
                   onClick={() => handleSort('counterparty')}
                 >
                   <div className="flex items-center gap-1">
-                    <span>Counterparty</span>
-                    {sortField === 'counterparty' && (
-                      sortDir === 'asc' ? (
-                        <ChevronUp className="w-3 h-3 text-indigo-600" />
-                      ) : (
-                        <ChevronDown className="w-3 h-3 text-indigo-600" />
-                      )
-                    )}
+                    <span>Counterparty / Entity</span>
+                    {sortField === 'counterparty' &&
+                      (sortDir === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
                   </div>
                 </th>
-                <th className="px-4 py-3">Reference</th>
+                <th className="px-4 py-3">Reference / UTR</th>
                 <th
-                  className="px-4 py-3 text-right cursor-pointer hover:text-slate-900 select-none"
+                  className="px-4 py-3 text-right cursor-pointer hover:text-slate-900 transition-colors"
                   onClick={() => handleSort('amount')}
                 >
                   <div className="flex items-center justify-end gap-1">
                     <span>Amount</span>
-                    {sortField === 'amount' && (
-                      sortDir === 'asc' ? (
-                        <ChevronUp className="w-3 h-3 text-indigo-600" />
-                      ) : (
-                        <ChevronDown className="w-3 h-3 text-indigo-600" />
-                      )
-                    )}
+                    {sortField === 'amount' &&
+                      (sortDir === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
                   </div>
                 </th>
                 <th className="px-4 py-3 text-center">Status</th>
@@ -315,24 +259,29 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
               {isLoading ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
-                    Loading staging records for job...
+                    Loading records for job...
                   </td>
                 </tr>
               ) : paginatedRecords.length > 0 ? (
-                paginatedRecords.map((r) => {
-                  const isEditing = editingRecordId === r.staging_id;
-                  const isError = !r.valid;
-                  const displayAmount = (r.amount_minor ?? 0) / 100;
+                paginatedRecords.map((r, idx) => {
+                  const recId = r.record_id || r.staging_id || r.statement_id || r.invoice_id || r.customer_id || `rec-${idx}`;
+                  const isEditing = editingRecordId === recId;
+                  const isError = r.valid === false;
+                  const rawAmountMinor = r.amount_minor ?? r.total_amount_minor ?? (r.amount != null ? Math.round(r.amount * 100) : 0);
+                  const displayAmount = rawAmountMinor / 100;
+                  const txnDate = r.txn_date || r.statement_date || r.invoice_date || '—';
+                  const counterparty = r.counterparty || r.payer_name || r.customer_name || r.company_name || '—';
+                  const reference = r.bank_reference || r.invoice_number || r.reference || '—';
 
                   return (
                     <tr
-                      key={r.staging_id}
+                      key={recId}
                       className={`transition-colors ${
                         isError ? 'bg-rose-50/40 hover:bg-rose-50/70 border-l-4 border-l-rose-500' : 'hover:bg-slate-50/80'
                       }`}
                     >
-                      <td className="px-4 py-3 font-semibold text-indigo-600 tnum max-w-[120px] truncate">
-                        {r.staging_id.slice(0, 8)}...
+                      <td className="px-4 py-3 font-semibold text-indigo-600 tnum max-w-[120px] truncate" title={recId}>
+                        {recId.slice(0, 10)}...
                       </td>
                       <td className="px-4 py-3 text-slate-500 tnum">
                         {isEditing ? (
@@ -343,7 +292,7 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
                             className="w-24 bg-white border border-indigo-500 rounded px-1.5 py-0.5 text-xs"
                           />
                         ) : (
-                          r.txn_date || '—'
+                          txnDate
                         )}
                       </td>
                       <td className="px-4 py-3">
@@ -356,7 +305,7 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
                           />
                         ) : (
                           <div className="flex flex-col">
-                            <span className="font-semibold text-slate-900">{r.counterparty || '—'}</span>
+                            <span className="font-semibold text-slate-900">{counterparty}</span>
                             {r.issues && r.issues.length > 0 && (
                               <span className="text-[10px] text-rose-600 font-medium flex items-center gap-1 mt-0.5">
                                 <AlertCircle className="w-3 h-3 flex-none" />
@@ -375,7 +324,7 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
                             className="w-full bg-white border border-indigo-500 rounded px-1.5 py-0.5 text-xs"
                           />
                         ) : (
-                          r.reference || '—'
+                          reference
                         )}
                       </td>
                       <td className="px-4 py-3 text-right font-bold text-slate-900 tnum">
@@ -401,7 +350,7 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
                         )}
                       </td>
                       <td className="px-4 py-3 text-center">
-                        <StatusPill status={r.valid ? 'mapped' : 'error'} />
+                        <StatusPill status={r.valid !== false ? 'mapped' : 'error'} />
                       </td>
                       <td className="px-4 py-3 text-right">
                         {isEditing ? (
@@ -409,7 +358,7 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
                             variant="success"
                             size="xs"
                             icon={Check}
-                            onClick={() => handleSaveEdit(r.staging_id)}
+                            onClick={() => handleSaveEdit(recId)}
                             title="Save inline correction"
                           >
                             Save
@@ -428,7 +377,7 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
                               variant="ghost"
                               size="xs"
                               icon={Trash2}
-                              onClick={() => onDeleteRow(r.staging_id)}
+                              onClick={() => onDeleteRow(recId)}
                               title="Delete record"
                               className="px-1.5 border-none shadow-none text-slate-400 hover:text-red-600"
                             />
@@ -442,8 +391,8 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
                 <tr>
                   <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
                     {activeJobId
-                      ? 'No staging records found for this ingestion job'
-                      : 'Select an ingestion job to view its staged records'}
+                      ? 'No canonical records found for this ingestion job'
+                      : 'Select an ingestion job to view its canonical database records'}
                   </td>
                 </tr>
               )}
