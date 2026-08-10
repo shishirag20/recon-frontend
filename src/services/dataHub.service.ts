@@ -150,6 +150,33 @@ export const ingestionJobService = {
 
 export const recordsService = {
   /**
+   * GET /records?stream={stream}&entity_id={entity_id}
+   * Fetches canonical records for an entity by stream (BANK, INVOICE, CUSTOMER, LEDGER).
+   */
+  async listByStream(
+    stream: string,
+    entityId: string,
+    params?: { valid?: boolean; search?: string; limit?: number; offset?: number },
+    forceRefresh = false
+  ): Promise<CanonicalRecordOut[]> {
+    const cacheKey = `stream_${stream}_entity_${entityId}_valid_${params?.valid ?? 'all'}`;
+
+    if (canonicalRecordsCache.has(cacheKey) && !forceRefresh && !params?.search) {
+      return Promise.resolve(canonicalRecordsCache.get(cacheKey)!);
+    }
+
+    const res = await api.get<CanonicalRecordOut[]>(
+      API_ROUTES.DATA_HUB.RECORDS_BY_STREAM,
+      { params: { stream, entity_id: entityId, ...params } as Record<string, string | number | boolean | undefined> }
+    );
+
+    if (!params?.search) {
+      canonicalRecordsCache.set(cacheKey, res);
+    }
+    return res;
+  },
+
+  /**
    * GET /ingestion-jobs/{job_id}/records
    * Caches in-memory by jobId + valid filter.
    */

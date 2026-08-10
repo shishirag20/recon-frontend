@@ -1,10 +1,29 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from '../ui/Button';
-import { FileText, Search, Plus, ChevronUp, ChevronDown, Trash2, Filter, Check, Edit2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Badge } from '../ui/Badge';
 import { StatusPill } from '../ui/StatusPill';
-import { recordsService } from '../../services';
+import {
+  Database,
+  Landmark,
+  Receipt,
+  Users,
+  BookOpen,
+  FileText,
+  Search,
+  Plus,
+  ChevronUp,
+  ChevronDown,
+  Trash2,
+  Filter,
+  Check,
+  Edit2,
+  AlertCircle,
+  CheckCircle2,
+} from 'lucide-react';
+import { dataSourceService, recordsService } from '../../services';
 import { useToast } from '../../hooks/useToast';
-import type { IngestionJobOut, CanonicalRecordOut } from '../../types/datahub';
+import { useDataHubStore } from '../../store/useDataHubStore';
+import type { IngestionJobOut, DataSourceOut, CanonicalRecordOut, IngestionStream } from '../../types/datahub';
 
 interface DataExplorerTabProps {
   jobs: IngestionJobOut[];
@@ -12,17 +31,43 @@ interface DataExplorerTabProps {
   onDeleteRow: (id: string) => void;
 }
 
+const STREAM_TABS: { key: IngestionStream; label: string; icon: React.FC<{ className?: string }>; description: string }[] = [
+  {
+    key: 'BANK',
+    label: 'Bank Statements',
+    icon: Landmark,
+    description: 'Canonical bank statement transactions',
+  },
+  {
+    key: 'INVOICE',
+    label: 'Invoices & Sub-ledger',
+    icon: Receipt,
+    description: 'Canonical invoice and sub-ledger records',
+  },
+  {
+    key: 'CUSTOMER',
+    label: 'Customer Master',
+    icon: Users,
+    description: 'Canonical customer master entries',
+  },
+  {
+    key: 'LEDGER',
+    label: 'General Ledger',
+    icon: BookOpen,
+    description: 'General ledger control records',
+  },
+];
+
 export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
-  jobs,
+  jobs: initialJobs,
   onInsertRow,
   onDeleteRow,
 }) => {
-  const ingestJobs = jobs;
-
-  // Active selected job ID
-  const [activeJobId, setActiveJobId] = useState<string>(ingestJobs[0]?.job_id || '');
+  const [dataSources, setDataSources] = useState<DataSourceOut[]>([]);
+  const [activeStream, setActiveStream] = useState<IngestionStream>('BANK');
+  const [activeJobId, setActiveJobId] = useState<string>('all');
   const [canonicalRecords, setCanonicalRecords] = useState<CanonicalRecordOut[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingRecords, setIsLoadingRecords] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showErrorsOnly, setShowErrorsOnly] = useState(false);
   const [sortField, setSortField] = useState<'date' | 'amount' | 'counterparty'>('date');
@@ -33,34 +78,79 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
   const pageSize = 8;
   const { toast } = useToast();
 
-  // If activeJobId is not set, set it to the first job when jobs load
-  useEffect(() => {
-    if (!activeJobId && ingestJobs.length > 0) {
-      setActiveJobId(ingestJobs[0].job_id);
-    }
-  }, [ingestJobs, activeJobId]);
+  const sourcesListFromStore = useDataHubStore((s) => s.sourcesList);
+  const setSourcesInStore = useDataHubStore((s) => s.setSources);
 
-  // Fetch canonical records from backend for activeJobId & showErrorsOnly filter
+  // Derive entityId from first data source in store/API (fallback 'ent-001')
+  const entityId =
+    sourcesListFromStore[0]?.entity_id ||
+    dataSources[0]?.entity_id ||
+    'ent-001';
+
+  // ── Step 1: Sync Data Sources ──────────────────────────────────────────────
+  useEffect(() => {
+    const fetchSources = async () => {
+      try {
+        if (sourcesListFromStore.length > 0) {
+          setDataSources(sourcesListFromStore);
+        } else {
+          const sources = await dataSourceService.list();
+          setDataSources(sources);
+          setSourcesInStore(sources);
+        }
+      } catch {
+        // Fall back gracefully
+      }
+    };
+    fetchSources();
+  }, [sourcesListFromStore, setSourcesInStore]);
+
+  // Jobs matching active stream for drill-down tab strip
+  const jobsForStream = initialJobs.filter(
+    (j) => j.stream === activeStream && (j.status === 'SUCCESS' || j.status === 'PARTIAL')
+  );
+
+  // ── Step 2: Fetch Records by Stream (GET /records?stream=X&entity_id=Y) ─────
   const fetchRecords = useCallback(async () => {
-    if (!activeJobId) return;
-    setIsLoading(true);
+    if (activeStream === 'LEDGER') {
+      setCanonicalRecords([]);
+      return;
+    }
+
+    setIsLoadingRecords(true);
     try {
-      const records = await recordsService.list(activeJobId, {
-        valid: showErrorsOnly ? false : undefined,
-      });
-      setCanonicalRecords(records);
+      if (activeJobId !== 'all') {
+        // Job-scoped drill down GET /ingestion-jobs/{job_id}/records
+        const records = await recordsService.list(activeJobId, {
+          valid: showErrorsOnly ? false : undefined,
+        });
+        setCanonicalRecords(records);
+      } else {
+        // Stream-scoped entity query GET /records?stream=X&entity_id=Y
+        const records = await recordsService.listByStream(activeStream, entityId, {
+          valid: showErrorsOnly ? false : undefined,
+        });
+        setCanonicalRecords(records);
+      }
     } catch {
       setCanonicalRecords([]);
     } finally {
-      setIsLoading(false);
+      setIsLoadingRecords(false);
     }
-  }, [activeJobId, showErrorsOnly]);
+  }, [activeStream, entityId, activeJobId, showErrorsOnly]);
 
   useEffect(() => {
     fetchRecords();
   }, [fetchRecords]);
 
-  // Client-side search and sorting
+  // Reset activeJobId when stream changes
+  const handleStreamChange = (stream: IngestionStream) => {
+    setActiveStream(stream);
+    setActiveJobId('all');
+    setCurrentPage(1);
+  };
+
+  // ── Client-side search and sorting ─────────────────────────────────────────
   const filteredRecords = canonicalRecords.filter((r) => {
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
@@ -100,10 +190,12 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
     }
   };
 
+  // ── Step 3: Edit Single Record via source_job_id (PATCH /ingestion-jobs/{source_job_id}/records/{record_id}) ──
   const handleStartEdit = (record: CanonicalRecordOut) => {
     const recId = record.record_id || record.staging_id || record.statement_id || record.invoice_id || record.customer_id || '';
     setEditingRecordId(recId);
     setEditFormData({
+      ...record,
       txn_date: record.txn_date || record.statement_date || record.invoice_date || '',
       reference: record.bank_reference || record.invoice_number || record.reference || '',
       counterparty: record.counterparty || record.payer_name || record.customer_name || record.company_name || '',
@@ -111,10 +203,15 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
     });
   };
 
-  const handleSaveEdit = async (recId: string) => {
-    if (!activeJobId) return;
+  const handleSaveEdit = async (recId: string, record: CanonicalRecordOut) => {
+    const targetJobId = record.source_job_id || record.job_id || (activeJobId !== 'all' ? activeJobId : jobsForStream[0]?.job_id);
+    if (!targetJobId) {
+      toast('Cannot edit record: missing source job ID', 'bad');
+      return;
+    }
+
     try {
-      await recordsService.patch(activeJobId, recId, {
+      await recordsService.patch(targetJobId, recId, {
         reference: editFormData.reference,
         counterparty: editFormData.counterparty,
         txn_date: editFormData.txn_date,
@@ -123,7 +220,7 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
       });
 
       setEditingRecordId(null);
-      toast('Canonical database record updated!', 'ok');
+      toast('Canonical record corrected & saved!', 'ok');
       fetchRecords();
     } catch {
       toast('Failed to save record correction', 'bad');
@@ -131,50 +228,124 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
   };
 
   return (
-    <div className="flex flex-col gap-4 fade-in">
-      {/* Scrollable Job Tabs Strip */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 border-b border-slate-200">
-        {ingestJobs.map((j) => {
-          const isActive = j.job_id === activeJobId;
-          const label = j.file_name || j.job_id.slice(0, 8);
-          return (
-            <button
-              key={j.job_id}
-              onClick={() => {
-                setActiveJobId(j.job_id);
-                setCurrentPage(1);
-              }}
-              className={`px-3.5 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-2 ${
-                isActive
-                  ? 'bg-indigo-600 text-white shadow-xs'
-                  : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              <FileText className="w-3.5 h-3.5" />
-              <span>{label}</span>
-              <span
-                className={`text-[10px] px-1.5 py-0.2 rounded font-semibold tnum ${
-                  isActive ? 'bg-indigo-700 text-white' : 'bg-slate-100 text-slate-500'
+    <div className="flex flex-col gap-5 fade-in">
+      {/* ── Fixed Stream Tabs Strip: BANK / INVOICE / CUSTOMER / LEDGER (GET /records?stream=X&entity_id=Y) ── */}
+      <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-xs flex flex-col gap-2">
+        <div className="flex items-center justify-between px-1">
+          <div className="flex items-center gap-2">
+            <Database className="w-4 h-4 text-indigo-600" />
+            <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+              Canonical Database Streams
+            </span>
+          </div>
+          <span className="text-[11px] text-slate-400">View canonical database tables across all data sources for entity {entityId.slice(0, 8)}</span>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 pt-1">
+          {STREAM_TABS.map((tab) => {
+            const isActive = tab.key === activeStream;
+            const IconComp = tab.icon;
+
+            return (
+              <Button
+                key={tab.key}
+                variant={isActive ? 'primary' : 'ghost'}
+                size="sm"
+                onClick={() => handleStreamChange(tab.key)}
+                className={`flex items-center gap-2.5 py-2.5 px-3.5 transition-all text-xs font-semibold rounded-lg border ${
+                  isActive
+                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs ring-2 ring-indigo-500/20'
+                    : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
                 }`}
               >
-                {j.row_count}
-              </span>
-            </button>
-          );
-        })}
-        {ingestJobs.length === 0 && (
-          <span className="text-xs text-slate-400 py-2">No active ingestion jobs available</span>
-        )}
+                <div className={`p-1.5 rounded-md ${isActive ? 'bg-indigo-700 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                  <IconComp className="w-4 h-4" />
+                </div>
+                <div className="flex flex-col text-left truncate">
+                  <span className="font-bold">{tab.label}</span>
+                  <span className={`text-[10px] truncate ${isActive ? 'text-indigo-100' : 'text-slate-400'}`}>
+                    {tab.key} STREAM
+                  </span>
+                </div>
+              </Button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Search Filter & Action Bar */}
+      {/* ── Per-Job Drill Down Sub-Tabs Strip (if jobs exist for active stream) ── */}
+      {jobsForStream.length > 0 && (
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 border-b border-slate-200">
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 px-2 flex-none">
+            <FileText className="w-3.5 h-3.5 text-indigo-500" />
+            <span>Uploaded Files ({jobsForStream.length}):</span>
+          </div>
+
+          <Button
+            variant={activeJobId === 'all' ? 'primary' : 'ghost'}
+            size="xs"
+            onClick={() => {
+              setActiveJobId('all');
+              setCurrentPage(1);
+            }}
+            className={`gap-1.5 text-xs font-semibold whitespace-nowrap transition-colors border ${
+              activeJobId === 'all'
+                ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            <span>All Stream Files</span>
+            <Badge
+              variant={activeJobId === 'all' ? 'accent' : 'muted'}
+              label={`${jobsForStream.reduce((sum, j) => sum + j.row_count, 0)} rows`}
+              className="text-[10px] px-1.5 py-0 tnum"
+            />
+          </Button>
+
+          {jobsForStream.map((j) => {
+            const isActive = j.job_id === activeJobId;
+            const label = j.file_name || j.job_id.slice(0, 8);
+            return (
+              <Button
+                key={j.job_id}
+                variant={isActive ? 'primary' : 'ghost'}
+                size="xs"
+                onClick={() => {
+                  setActiveJobId(j.job_id);
+                  setCurrentPage(1);
+                }}
+                className={`gap-1.5 text-xs font-semibold whitespace-nowrap transition-colors border ${
+                  isActive
+                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <span>{label}</span>
+                <Badge variant={isActive ? 'accent' : 'muted'} label={`${j.row_count} rows`} className="text-[10px] px-1.5 py-0 tnum" />
+              </Button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Notice for LEDGER Stream (No canonical table yet) ── */}
+      {activeStream === 'LEDGER' && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-800 flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-amber-600 flex-none" />
+          <span>
+            General Ledger control tables are stored directly in GL journal modules. Canonical sub-ledger stream viewing is active for Bank Statements, Invoices, and Customer Master.
+          </span>
+        </div>
+      )}
+
+      {/* ── Search Filter & Action Bar ── */}
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 flex-1 max-w-xl">
           <div className="relative flex-1">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
             <input
               type="text"
-              placeholder="Search by counterparty, reference, or record ID..."
+              placeholder={`Search ${activeStream.toLowerCase()} records by counterparty, reference, or record ID...`}
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
@@ -184,27 +355,25 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
             />
           </div>
 
-          {/* Exception Filter Toggle: Show Errors Only */}
-          <button
+          {/* Error Filter Toggle using Button UI Component */}
+          <Button
+            variant={showErrorsOnly ? 'bad' : 'ghost'}
+            size="sm"
+            icon={Filter}
             onClick={() => {
               setShowErrorsOnly(!showErrorsOnly);
               setCurrentPage(1);
             }}
-            className={`h-9 px-3 text-xs font-bold rounded-lg border flex items-center gap-1.5 transition-colors ${
-              showErrorsOnly
-                ? 'bg-rose-50 border-rose-300 text-rose-700'
-                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-            }`}
+            className={!showErrorsOnly ? 'border border-slate-200 bg-white text-slate-600' : ''}
           >
-            <Filter className="w-3.5 h-3.5" />
-            <span>Show Errors Only</span>
-          </button>
+            {showErrorsOnly ? 'Errors Only Active' : 'Show Errors Only'}
+          </Button>
         </div>
 
         <div className="flex items-center gap-2">
           <div className="h-9 px-3.5 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold rounded-lg flex items-center gap-1.5 shadow-xs">
             <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-            <span>Canonical Database Records</span>
+            <span>GET /records?stream={activeStream}</span>
           </div>
 
           <Button variant="ghost" size="sm" icon={Plus} onClick={onInsertRow}>
@@ -213,7 +382,7 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
         </div>
       </div>
 
-      {/* Data Explorer Table Card */}
+      {/* ── Canonical Table View ── */}
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs flex flex-col">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
@@ -256,10 +425,10 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {isLoading ? (
+              {isLoadingRecords ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
-                    Loading records for job...
+                    Loading {activeStream} records...
                   </td>
                 </tr>
               ) : paginatedRecords.length > 0 ? (
@@ -358,7 +527,7 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
                             variant="success"
                             size="xs"
                             icon={Check}
-                            onClick={() => handleSaveEdit(recId)}
+                            onClick={() => handleSaveEdit(recId, r)}
                             title="Save inline correction"
                           >
                             Save
@@ -390,9 +559,7 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
               ) : (
                 <tr>
                   <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
-                    {activeJobId
-                      ? 'No canonical records found for this ingestion job'
-                      : 'Select an ingestion job to view its canonical database records'}
+                    No canonical database records found for {activeStream} stream
                   </td>
                 </tr>
               )}
@@ -400,37 +567,31 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
           </table>
         </div>
 
-        {/* Pagination Bar */}
-        <div className="px-5 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-xs text-slate-600">
+        {/* ── Pagination Footer ── */}
+        <div className="px-4 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-xs text-slate-600">
           <span>
-            Showing{' '}
-            <strong className="font-semibold text-slate-900 tnum">
-              {sortedRecords.length > 0 ? (currentPage - 1) * pageSize + 1 : 0}
-            </strong>{' '}
-            -{' '}
-            <strong className="font-semibold text-slate-900 tnum">
-              {Math.min(currentPage * pageSize, sortedRecords.length)}
-            </strong>{' '}
-            of <strong className="font-semibold text-slate-900 tnum">{sortedRecords.length}</strong> records
+            Showing <strong className="text-slate-900">{paginatedRecords.length}</strong> of{' '}
+            <strong className="text-slate-900">{sortedRecords.length}</strong> canonical records
           </span>
-
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <Button
               variant="ghost"
-              size="sm"
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage(currentPage - 1)}
+              size="xs"
+              disabled={currentPage <= 1}
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              className="border border-slate-200 bg-white"
             >
               Previous
             </Button>
-            <span className="font-semibold text-slate-700 tnum">
+            <span className="px-2 font-semibold text-slate-700">
               Page {currentPage} of {totalPages}
             </span>
             <Button
               variant="ghost"
-              size="sm"
+              size="xs"
               disabled={currentPage >= totalPages}
-              onClick={() => setCurrentPage(currentPage + 1)}
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              className="border border-slate-200 bg-white"
             >
               Next
             </Button>
