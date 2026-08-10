@@ -28,11 +28,19 @@ export const API_ROUTES = {
     DETAIL: (id: string) => `/reconciliations/${id}`,
     RUN: (id: string) => `/reconciliations/${id}/run`,
   },
-  // Ingestion & Data Hub
+  // DataHub — Data Sources
   DATA_HUB: {
-    JOBS: `/data-hub/jobs`,
-    STAGING: `/data-hub/staging`,
-    MAPPINGS: `/data-hub/mappings`,
+    DATA_SOURCES: `/data-sources`,
+    DATA_SOURCE: (id: string) => `/data-sources/${id}`,
+    FIELD_MAPPINGS: (id: string) => `/data-sources/${id}/field-mappings`,
+    FIELD_MAPPING_VERSIONS: (id: string) => `/data-sources/${id}/field-mappings/versions`,
+    FIELD_MAPPING_PREVIEW: (id: string) => `/data-sources/${id}/field-mappings/preview`,
+    INGESTION_JOBS: `/ingestion-jobs`,
+    INGESTION_JOB: (id: string) => `/ingestion-jobs/${id}`,
+    INGESTION_JOB_RETRY: (id: string) => `/ingestion-jobs/${id}/retry`,
+    INGESTION_JOB_PROMOTE: (id: string) => `/ingestion-jobs/${id}/promote`,
+    INGESTION_JOB_STAGING: (id: string) => `/ingestion-jobs/${id}/staging-records`,
+    STAGING_RECORD: (id: string) => `/staging-records/${id}`,
   },
   // Reports & Audit
   REPORTS: {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Topbar } from '../components/layout/Topbar';
 import { Button } from '../components/ui/Button';
@@ -47,7 +47,12 @@ export const ReconciliationPage: React.FC = () => {
   const [subFilter, setSubFilter] = useState<'all' | 'mine' | 'needs-resolution' | 'completed'>('needs-resolution');
 
   const jobs = useReconciliationStore((s) => s.jobs);
+  const fetchJobs = useReconciliationStore((s) => s.fetchJobs);
   const addJob = useReconciliationStore((s) => s.addJob);
+
+  useEffect(() => {
+    fetchJobs();
+  }, [fetchJobs]);
 
   const { openModal, closeModal } = useModal();
   const { toast } = useToast();

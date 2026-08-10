@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { FieldMapping } from '../../types';
-import { DATA_HUB_CATEGORIES } from '../../types';
-import { Button } from '../ui/Button';
-import { Plus, Trash2 } from 'lucide-react';
+import { dataSourceService, fieldMappingService } from '../../services';
+import { useDataHubStore } from '../../store/useDataHubStore';
+import type { DataSourceOut, FieldMappingOut } from '../../types/datahub';
 
 interface SchemasTabProps {
   mappings: FieldMapping[];
@@ -15,59 +15,135 @@ const getFriendlyFieldName = (key: string): string => {
     transaction_id: 'Transaction ID',
     transaction_date: 'Transaction Date',
     amount: 'Payment Amount',
+    amount_minor: 'Payment Amount (Minor Units)',
+    amount_home_minor: 'Home Amount (Minor Units)',
     currency: 'ISO Currency Code',
     payer_name: 'Payer / Customer Name',
     bank_reference: 'Bank UTR / Reference',
+    reference: 'Reference Number',
+    counterparty: 'Counterparty / Entity Name',
     narration: 'Statement Narration / Memo',
     status: 'Clearing Status',
+    txn_date: 'Transaction Date (ISO)',
   };
   return map[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 };
 
 const getFriendlyDataType = (key: string): string => {
-  if (key.includes('date')) return 'Date (YYYY-MM-DD)';
-  if (key.includes('amount') || key.includes('balance') || key.includes('fee')) return 'Currency Amount (Decimal)';
+  if (key.includes('date') || key.includes('txn_date')) return 'Date (ISO YYYY-MM-DD)';
+  if (key.includes('amount') || key.includes('balance') || key.includes('fee') || key.includes('minor')) return 'Currency Amount (Integer Minor Units)';
   if (key.includes('currency')) return '3-Letter Currency Code (e.g. INR)';
-  if (key.includes('id') || key.includes('ref')) return 'Alphanumeric Code / ID';
+  if (key.includes('id') || key.includes('ref') || key.includes('reference')) return 'Alphanumeric Code / ID';
   return 'Text / String';
 };
 
 export const SchemasTab: React.FC<SchemasTabProps> = ({
-  mappings,
-  onDeleteMapping,
-  onAddMapping,
+  mappings: fallbackMappings,
 }) => {
-  const [selectedSource, setSelectedSource] = useState<string>(DATA_HUB_CATEGORIES[0]);
+  const [dataSources, setDataSources] = useState<DataSourceOut[]>([]);
+  const [selectedSourceId, setSelectedSourceId] = useState<string>('');
+  const [liveMappings, setLiveMappings] = useState<FieldMappingOut[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const sourcesList = useDataHubStore((s) => s.sourcesList);
+
+  // 1. Sync data sources from store or cache
+  useEffect(() => {
+    if (sourcesList.length > 0) {
+      setDataSources(sourcesList);
+      setSelectedSourceId((prev) => prev || sourcesList[0].source_id);
+    } else {
+      dataSourceService.list().then((sources) => {
+        if (sources.length > 0) {
+          setDataSources(sources);
+          setSelectedSourceId((prev) => prev || sources[0].source_id);
+        }
+      }).catch(() => {});
+    }
+  }, [sourcesList]);
+
+  // 2. Fetch field mappings for selected data source ID
+  useEffect(() => {
+    if (!selectedSourceId) return;
+
+    let isCancelled = false;
+    const fetchMappings = async () => {
+      setIsLoading(true);
+      try {
+        const data = await fieldMappingService.getActive(selectedSourceId);
+        if (!isCancelled) {
+          setLiveMappings(data);
+        }
+      } catch {
+        if (!isCancelled) {
+          setLiveMappings([]);
+        }
+      } finally {
+        if (!isCancelled) setIsLoading(false);
+      }
+    };
+
+    fetchMappings();
+    return () => { isCancelled = true; };
+  }, [selectedSourceId]);
+
+  const selectedSource = dataSources.find((s) => s.source_id === selectedSourceId);
+  const selectedSourceName = selectedSource?.name || 'Selected Source';
+
+  // Combine liveMappings or fallbackMappings for rendering
+  const displayFields = liveMappings.length > 0
+    ? liveMappings.map((m) => ({
+        id: m.mapping_id,
+        ledger: m.canonical_field,
+        sourceField: m.source_field,
+        transform: m.transform,
+        transformParam: m.transform_param,
+        required: true,
+      }))
+    : fallbackMappings.map((m) => ({
+        id: m.id,
+        ledger: m.ledger,
+        sourceField: m.ledger,
+        transform: 'TRIM',
+        transformParam: null,
+        required: m.required,
+      }));
 
   return (
     <div className="flex flex-col gap-6 fade-in">
       {/* Target Schema Selector Card */}
       <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex items-center justify-between">
         <div className="flex flex-col">
-          <h3 className="text-sm font-bold text-slate-900 tracking-tight">
-            Target Schema Definitions
-          </h3>
-          <span className="text-xs text-slate-500">
-            Define standardized column validation rules and required fields for incoming statements
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-bold text-slate-900 tracking-tight">
+              Active Field Mapping Schema
+            </h3>
+            <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded uppercase">
+              Read-Only Reference
+            </span>
+          </div>
+          <span className="text-xs text-slate-500 mt-0.5">
+            Select a backend data source to view its active canonical mapping rules & transform engines
           </span>
         </div>
 
+        {/* Data Sources Dropdown (Fetched from backend) */}
         <div className="flex items-center gap-3">
+          <label htmlFor="datasource-select" className="text-xs font-semibold text-slate-700">
+            Data Source:
+          </label>
           <select
-            value={selectedSource}
-            onChange={(e) => setSelectedSource(e.target.value)}
-            className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-600 font-medium"
+            id="datasource-select"
+            value={selectedSourceId}
+            onChange={(e) => setSelectedSourceId(e.target.value)}
+            className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-indigo-600 font-semibold"
           >
-            {DATA_HUB_CATEGORIES.map((cat) => (
-              <option key={cat} value={cat}>
-                {cat} Schema
+            {dataSources.map((ds) => (
+              <option key={ds.source_id} value={ds.source_id}>
+                {ds.name} ({ds.kind})
               </option>
             ))}
           </select>
-
-          <Button variant="primary" size="sm" icon={Plus} onClick={onAddMapping}>
-            Add Field
-          </Button>
         </div>
       </div>
 
@@ -75,60 +151,87 @@ export const SchemasTab: React.FC<SchemasTabProps> = ({
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
         <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
           <span className="text-sm font-bold text-slate-900">
-            Defined Schema Fields ({mappings.length})
+            Defined Schema Rules ({displayFields.length})
           </span>
-          <span className="text-xs font-semibold text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded border border-indigo-100">
-            Schema: {selectedSource}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded border border-indigo-100">
+              Source: {selectedSourceName}
+            </span>
+            <span className="text-[11px] font-mono text-slate-400">
+              ID: {selectedSourceId.slice(0, 8)}...
+            </span>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 text-slate-500 border-b border-slate-200 font-semibold">
               <tr>
-                <th className="px-4 py-3">Field Name (Database field name)</th>
+                <th className="px-4 py-3">Canonical Field (DB Field)</th>
+                <th className="px-4 py-3">Source Column Name</th>
+                <th className="px-4 py-3">Transform Engine</th>
                 <th className="px-4 py-3">Expected Data Type</th>
-                <th className="px-4 py-3 text-center">Requirement Status</th>
-                <th className="px-4 py-3 text-right">Actions</th>
+                <th className="px-4 py-3 text-center">Requirement</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {mappings.map((m) => (
-                <tr key={m.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-3">
-                    <div className="font-bold text-slate-900">
-                      {getFriendlyFieldName(m.ledger)}
-                    </div>
-                    <div className="text-[11px] font-mono text-slate-400 mt-0.5">
-                      ({m.ledger})
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-slate-700 font-medium">
-                    <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px] font-semibold border border-slate-200">
-                      {getFriendlyDataType(m.ledger)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <span
-                      className={`text-[10px] px-2.5 py-1 rounded-full font-bold uppercase ${m.required
-                          ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                          : 'bg-slate-100 text-slate-600 border border-slate-200'
-                        }`}
-                    >
-                      {m.required ? 'Mandatory (Required)' : 'Optional Field'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <button
-                      onClick={() => onDeleteMapping(m.id)}
-                      className="text-slate-400 hover:text-rose-600 p-1.5 rounded-md hover:bg-slate-100 transition-colors"
-                      title="Delete field"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+              {isLoading ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
+                    Loading mapping rules from backend...
                   </td>
                 </tr>
-              ))}
+              ) : displayFields.length > 0 ? (
+                displayFields.map((m) => (
+                  <tr key={m.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-3">
+                      <div className="font-bold text-slate-900">
+                        {getFriendlyFieldName(m.ledger)}
+                      </div>
+                      <div className="text-[11px] font-mono text-slate-400 mt-0.5">
+                        ({m.ledger})
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 font-mono font-semibold text-indigo-700">
+                      {m.sourceField}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1.5">
+                        <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-700 font-mono text-[10px] font-bold border border-amber-200">
+                          {m.transform || 'TRIM'}
+                        </span>
+                        {m.transformParam && (
+                          <span className="text-[10px] font-mono text-slate-400 truncate max-w-[120px]">
+                            ({m.transformParam})
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-slate-700 font-medium">
+                      <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px] font-semibold border border-slate-200">
+                        {getFriendlyDataType(m.ledger)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span
+                        className={`text-[10px] px-2.5 py-1 rounded-full font-bold uppercase ${
+                          m.required
+                            ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                            : 'bg-slate-100 text-slate-600 border border-slate-200'
+                        }`}
+                      >
+                        {m.required ? 'Mandatory' : 'Optional'}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
+                    No field mapping rules configured for {selectedSourceName}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

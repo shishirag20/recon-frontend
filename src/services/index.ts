@@ -1,12 +1,14 @@
 /**
- * Unified Service Layer Entry Point
- * Exporting all API client configurations and domain services
+ * Central service barrel export
+ * Import domain services from here rather than individual files.
  */
-
-export * from './api/config';
-export * from './api/client';
 export { arService } from './ar.service';
 export { reconciliationsService } from './reconciliations.service';
 export { reportsService } from './reports.service';
-export { dataHubService } from './dataHub.service';
+export {
+  dataSourceService,
+  fieldMappingService,
+  ingestionJobService,
+  stagingService,
+} from './dataHub.service';
 export { intercompanyService } from './intercompany.service';

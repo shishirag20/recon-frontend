@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { MOCK_AR_RULES } from '../../mocks/ar';
+import React, { useState, useEffect } from 'react';
+import { arService } from '../../services/ar.service';
 import type { ARRule } from '../../types';
 import { ARGroupRow, type PhaseGroupMeta } from './ARGroupRow';
 import { useToast } from '../../hooks/useToast';
@@ -80,7 +80,7 @@ const PHASE_GROUPS: PhaseGroupMeta[] = [
 ];
 
 export const ARRulesStudioTab: React.FC = () => {
-  const [rules, setRules] = useState<ARRule[]>(MOCK_AR_RULES);
+  const [rules, setRules] = useState<ARRule[]>([]);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     'group-intake': true,
     'group-customer': true,
@@ -89,6 +89,14 @@ export const ARRulesStudioTab: React.FC = () => {
   });
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const { toast } = useToast();
+
+  useEffect(() => {
+    let cancelled = false;
+    arService.getARRules().then((res) => {
+      if (!cancelled) setRules(res);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   const handleToggleGroup = (key: string) => {
     setOpenGroups((prev) => ({ ...prev, [key]: !prev[key] }));
