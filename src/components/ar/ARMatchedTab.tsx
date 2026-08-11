@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { arService } from '../../services/ar.service';
 import { Button } from '../ui/Button';
-import { CheckCircle2, AlertTriangle, ArrowRightLeft, Undo2 } from 'lucide-react';
+import { Undo2 } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
 import type { GatewaySettlement, MatchResult, AREngineResult } from '../../types';
 
@@ -22,7 +22,7 @@ export const ARMatchedTab: React.FC = () => {
     let cancelled = false;
     arService.getARReconciliation().then((res) => {
       if (!cancelled) setArResult(res);
-    }).catch(() => {});
+    }).catch(() => { });
     return () => { cancelled = true; };
   }, []);
 
@@ -429,46 +429,35 @@ export const ARMatchedTab: React.FC = () => {
 
       {/* STREAM 3: Subledger vs GL Control */}
       {stream === 'gl' && (
-        <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs max-w-2xl mx-auto space-y-5">
-          <div className="flex items-center gap-3 pb-4 border-b border-slate-200">
-            <div className="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center flex-none border border-indigo-100">
-              <ArrowRightLeft className="w-5 h-5" />
-            </div>
+        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+          <div className="p-5 grid grid-cols-3 gap-4 text-center">
             <div>
-              <h3 className="text-sm font-bold text-slate-900">Subledger vs GL Control Reconciliation</h3>
-              <p className="text-xs text-slate-500">
-                Verifies accounts receivable sub-ledger matches General Ledger control account 11000.
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-4 text-center">
-            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
-              <div className="text-[11px] font-bold text-slate-400 uppercase">AR Subledger Balance</div>
-              <div className="text-base font-semibold text-slate-900 mt-1">
+              <div className="text-[10.5px] font-bold text-slate-400 uppercase tracking-[0.06em] mb-1">
+                AR Sub-ledger
+              </div>
+              <div className="text-lg font-semibold text-slate-900">
                 ₹{(glBalances?.subledgerBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
               </div>
             </div>
 
-            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
-              <div className="text-[11px] font-bold text-slate-400 uppercase">GL Account #11000</div>
-              <div className="text-base font-semibold text-slate-900 mt-1">
+            <div>
+              <div className="text-[10.5px] font-bold text-slate-400 uppercase tracking-[0.06em] mb-1">
+                GL Account {glBalances?.account || '1200'}
+              </div>
+              <div className="text-lg font-semibold text-slate-900">
                 ₹{(glBalances?.glBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
               </div>
             </div>
 
-            <div
-              className={`p-4 rounded-xl border ${glBalances?.variance ? 'bg-amber-50 border-amber-200' : 'bg-emerald-50 border-emerald-200'
-                }`}
-            >
+            <div>
               <div
-                className={`text-[11px] font-bold uppercase ${glBalances?.variance ? 'text-amber-700' : 'text-emerald-700'
+                className={`text-[10.5px] font-bold uppercase tracking-[0.06em] mb-1 ${glBalances?.variance ? 'text-red-700' : 'text-emerald-700'
                   }`}
               >
                 Variance
               </div>
               <div
-                className={`text-base font-semibold mt-1 ${glBalances?.variance ? 'text-amber-700' : 'text-emerald-700'
+                className={`text-lg font-semibold ${glBalances?.variance ? 'text-red-700' : 'text-emerald-700'
                   }`}
               >
                 ₹{(glBalances?.variance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
@@ -477,16 +466,12 @@ export const ARMatchedTab: React.FC = () => {
           </div>
 
           {glBalances?.variance ? (
-            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2.5 text-amber-900 text-xs font-medium">
-              <AlertTriangle className="w-4 h-4 text-amber-600 flex-none" />
-              <span>
-                Variance of ₹{glBalances.variance.toLocaleString('en-IN', { minimumFractionDigits: 2 })} flagged for GL Control review.
-              </span>
+            <div className="px-5 pb-5 text-[12px] text-red-700">
+              {glBalances.account || '1200'} mismatch suspected — an unposted adjustment is likely. See Exceptions for the logged entry.
             </div>
           ) : (
-            <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center gap-2.5 text-emerald-900 text-xs font-medium">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-none" />
-              <span>Subledger and General Ledger balances match perfectly. Zero variance.</span>
+            <div className="px-5 pb-5 text-[12px] text-emerald-700">
+              In balance — no variance beyond the configured tolerance.
             </div>
           )}
         </div>
