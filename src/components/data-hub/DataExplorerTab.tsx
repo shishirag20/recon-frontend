@@ -497,7 +497,7 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
         <div className="px-4 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-xs text-slate-600">
           <span>
             Showing <strong className="text-slate-900">{paginatedRecords.length}</strong> of{' '}
-            <strong className="text-slate-900">{sortedRecords.length}</strong> canonical records
+            <strong className="text-slate-900">{sortedRecords.length}</strong> records
           </span>
           <div className="flex items-center gap-1.5">
             <Button
