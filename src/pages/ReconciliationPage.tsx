@@ -78,7 +78,7 @@ export const ReconciliationPage: React.FC = () => {
         <Topbar title="Reconciliation Library" subtitle="July 2026" />
 
         <div className="flex-1 p-6 overflow-y-auto">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 max-w-6xl">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             {LIBRARY_CATEGORIES.map((cat) => {
               const IconComp = cat.icon;
               return (
