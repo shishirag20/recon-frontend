@@ -26,7 +26,7 @@ dist-ssr
 # Environment & local settings
 .env.development
 .env*.local
-
+.env
 # Agents configuration
 .agents/
 
