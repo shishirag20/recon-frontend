@@ -32,9 +32,13 @@ export const API_ROUTES = {
   DATA_HUB: {
     DATA_SOURCES: `/data-sources`,
     DATA_SOURCE: (id: string) => `/data-sources/${id}`,
-    FIELD_MAPPINGS: (id: string) => `/data-sources/${id}/field-mappings`,
-    FIELD_MAPPING_VERSIONS: (id: string) => `/data-sources/${id}/field-mappings/versions`,
-    FIELD_MAPPING_PREVIEW: (id: string) => `/data-sources/${id}/field-mappings/preview`,
+    // Global per-stream mapping (BANK/INVOICE/CUSTOMER/...) - shared by every
+    // data source/entity/org ingesting that stream, not scoped to one source.
+    FIELD_MAPPINGS: (stream: string) => `/field-mappings/${stream}`,
+    FIELD_MAPPING_VERSIONS: (stream: string) => `/field-mappings/${stream}/versions`,
+    FIELD_MAPPING_PREVIEW: (stream: string) => `/field-mappings/${stream}/preview`,
+    FIELD_MAPPING_RESOLVE: (stream: string) => `/field-mappings/${stream}/resolve-headers`,
+    FIELD_MAPPING_CANONICAL_FIELDS: (stream: string) => `/field-mappings/${stream}/canonical-fields`,
     INGESTION_JOBS: `/ingestion-jobs`,
     INGESTION_JOB: (id: string) => `/ingestion-jobs/${id}`,
     INGESTION_JOB_RETRY: (id: string) => `/ingestion-jobs/${id}/retry`,

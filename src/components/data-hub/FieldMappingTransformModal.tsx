@@ -8,8 +8,10 @@ import {
   Check,
   X,
   Loader2,
+  Sparkles,
 } from 'lucide-react';
 import { fieldMappingService } from '../../services/dataHub.service';
+import { readCsvHeaders } from '../../utils/csv';
 import type { FieldMappingIn, TransformType } from '../../types/datahub';
 
 interface MappingRow {
@@ -17,12 +19,14 @@ interface MappingRow {
   source_field: string;
   canonical_field: string;
   transform: TransformType;
+  isNew?: boolean; // present in the uploaded file's headers but not in the active mapping
 }
 
 interface FieldMappingTransformModalProps {
   isOpen: boolean;
   onClose: () => void;
-  sourceId: string;
+  stream: string;
+  file: File;
   categoryName: string;
   fileName: string;
   onConfirmMapping: (mappings: FieldMappingIn[]) => Promise<void>;
@@ -40,31 +44,17 @@ const TRANSFORM_OPTIONS: { value: TransformType; label: string }[] = [
   { value: 'REGEX', label: 'Regex Extract' },
 ];
 
-const CANONICAL_FIELD_OPTIONS = [
-  'credit_limit',
-  'currency_code',
-  'customer_code',
-  'customer_id',
-  'pan',
-  'gstin',
-  'txn_date',
-  'counterparty',
-  'reference',
-  'amount_minor',
-  'amount_home_minor',
-  'currency',
-  'dr_cr',
-];
-
 export const FieldMappingTransformModal: React.FC<FieldMappingTransformModalProps> = ({
   isOpen,
   onClose,
-  sourceId,
+  stream,
+  file,
   categoryName,
   fileName,
   onConfirmMapping,
 }) => {
   const [rows, setRows] = useState<MappingRow[]>([]);
+  const [canonicalFieldOptions, setCanonicalFieldOptions] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
@@ -72,38 +62,74 @@ export const FieldMappingTransformModal: React.FC<FieldMappingTransformModalProp
     if (!isOpen) return;
 
     let cancelled = false;
-    const loadMappings = async () => {
+    const load = async () => {
       setIsLoading(true);
       try {
-        const mappings = await fieldMappingService.getActive(sourceId);
-        if (!cancelled) {
-          setRows(
-            mappings.map((m, idx) => ({
-              id: m.mapping_id || `map-${idx}`,
-              source_field: m.source_field,
-              canonical_field: m.canonical_field,
-              transform: m.transform || 'NONE',
-            }))
-          );
+        // Base rows: the stream's real active mapping (shared globally per
+        // stream - see migration 0026). Kept as-is rather than rebuilt from
+        // the file's headers, since a single header can fan out into several
+        // rows via CONST (e.g. one "amount" column driving amount_minor,
+        // currency, and dr_cr) - rebuilding from headers alone would drop those.
+        const [mappings, fields] = await Promise.all([
+          fieldMappingService.getActive(stream),
+          fieldMappingService.canonicalFields(stream),
+        ]);
+        if (cancelled) return;
+
+        const baseRows: MappingRow[] = mappings.map((m, idx) => ({
+          id: m.mapping_id || `map-${idx}`,
+          source_field: m.source_field,
+          canonical_field: m.canonical_field,
+          transform: m.transform || 'NONE',
+        }));
+        setCanonicalFieldOptions(fields);
+
+        // Enrichment: check this specific file's actual headers against the
+        // DB dictionary, and append only the ones genuinely not covered yet -
+        // surfaces what's actually new about this file instead of a static
+        // list. Best-effort: a non-CSV file or a read failure just falls back
+        // to showing the active mapping alone.
+        try {
+          const headers = await readCsvHeaders(file);
+          if (headers.length > 0) {
+            const resolved = await fieldMappingService.resolveHeaders(stream, headers);
+            const newRows: MappingRow[] = resolved
+              .filter((r) => !r.matched)
+              .map((r, idx) => ({
+                id: `new-${idx}-${r.source_field}`,
+                source_field: r.source_field,
+                canonical_field: fields[0] || '',
+                transform: 'NONE' as TransformType,
+                isNew: true,
+              }));
+            if (!cancelled && newRows.length > 0) {
+              setRows([...baseRows, ...newRows]);
+              return;
+            }
+          }
+        } catch {
+          // fall through to base rows only
         }
+        if (!cancelled) setRows(baseRows);
       } catch {
         if (!cancelled) {
           setRows([]);
+          setCanonicalFieldOptions([]);
         }
       } finally {
         if (!cancelled) setIsLoading(false);
       }
     };
 
-    loadMappings();
+    load();
     return () => { cancelled = true; };
-  }, [isOpen, sourceId]);
+  }, [isOpen, stream, file]);
 
   const handleAddRow = () => {
     const newId = `map-${Date.now()}`;
     setRows((prev) => [
       ...prev,
-      { id: newId, source_field: 'new_column', canonical_field: 'counterparty', transform: 'NONE' },
+      { id: newId, source_field: 'new_column', canonical_field: canonicalFieldOptions[0] || '', transform: 'NONE' },
     ]);
   };
 
@@ -185,7 +211,7 @@ export const FieldMappingTransformModal: React.FC<FieldMappingTransformModalProp
           {isLoading ? (
             <div className="py-12 flex flex-col items-center justify-center gap-2 text-slate-400">
               <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
-              <span className="text-xs font-medium">Loading field schema mappings...</span>
+              <span className="text-xs font-medium">Reading file & checking against saved mappings...</span>
             </div>
           ) : (
             <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
@@ -202,20 +228,28 @@ export const FieldMappingTransformModal: React.FC<FieldMappingTransformModalProp
                 {rows.map((row) => (
                   <div
                     key={row.id}
-                    className="grid grid-cols-12 items-center px-4 py-2.5 gap-2 hover:bg-slate-50/50 transition-colors"
+                    className={`grid grid-cols-12 items-center px-4 py-2.5 gap-2 hover:bg-slate-50/50 transition-colors ${row.isNew ? 'bg-amber-50/40' : ''}`}
                   >
                     {/* Source Field */}
-                    <div className="col-span-4">
+                    <div className="col-span-4 flex items-center gap-1.5 min-w-0">
                       <select
                         value={row.source_field}
                         onChange={(e) => handleRowChange(row.id, 'source_field', e.target.value)}
                         className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-800 font-medium focus:outline-none focus:border-indigo-500"
                       >
                         <option value={row.source_field}>{row.source_field}</option>
-                        {CANONICAL_FIELD_OPTIONS.map((f) => (
+                        {canonicalFieldOptions.map((f) => (
                           <option key={f} value={f}>{f}</option>
                         ))}
                       </select>
+                      {row.isNew && (
+                        <span
+                          title="Present in this file but not in the saved mapping yet"
+                          className="flex-none flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200"
+                        >
+                          <Sparkles className="w-2.5 h-2.5" /> NEW
+                        </span>
+                      )}
                     </div>
 
                     {/* Arrow Divider */}
@@ -226,7 +260,7 @@ export const FieldMappingTransformModal: React.FC<FieldMappingTransformModalProp
                         onChange={(e) => handleRowChange(row.id, 'canonical_field', e.target.value)}
                         className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-900 font-semibold focus:outline-none focus:border-indigo-500"
                       >
-                        {CANONICAL_FIELD_OPTIONS.map((f) => (
+                        {canonicalFieldOptions.map((f) => (
                           <option key={f} value={f}>{f}</option>
                         ))}
                       </select>
@@ -262,7 +296,7 @@ export const FieldMappingTransformModal: React.FC<FieldMappingTransformModalProp
                 ))}
                 {rows.length === 0 && (
                   <div className="py-8 text-center text-xs text-slate-400">
-                    No active field mappings defined for this data source yet. Click "+ Add mapping" to define your column rules.
+                    No active field mappings defined for this stream yet. Click "+ Add mapping" to define your column rules.
                   </div>
                 )}
               </div>

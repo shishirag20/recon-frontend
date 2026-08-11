@@ -11,7 +11,7 @@ import {
 import type { IngestionJobOut, DataSourceOut, FieldMappingIn } from '../../types/datahub';
 import { getStreamByCategory } from '../../types/datahub';
 import { useDataHubStore } from '../../store/useDataHubStore';
-import { ingestionJobService, dataSourceService } from '../../services';
+import { ingestionJobService, dataSourceService, fieldMappingService } from '../../services';
 import { useToast } from '../../hooks/useToast';
 import { FieldMappingTransformModal } from './FieldMappingTransformModal';
 import { BatchJobStartedModal } from './BatchJobStartedModal';
@@ -84,7 +84,13 @@ export const JobsTab: React.FC<JobsTabProps> = ({
   // ── Handle Card Click ➔ Native OS File Dialog Trigger ───────────────────────
   const handleCardClick = (sourceId: string, categoryName: string) => {
     setActiveUploadingSourceId(sourceId);
-    const stream = getStreamByCategory(categoryName);
+    // Prefer the data source's own registered stream over guessing from its
+    // display name - the guess is only a fallback for sources not in the
+    // loaded list (e.g. mock data), matching the same "stream is a property
+    // of the data source, not derived from its name" fix already made
+    // server-side (see docs/data-hub.md §1).
+    const source = dataSources.find((s) => s.source_id === sourceId);
+    const stream = source?.stream || getStreamByCategory(categoryName);
     setActiveUploadingStream(stream);
 
     if (fileInputRef.current) {
@@ -111,12 +117,16 @@ export const JobsTab: React.FC<JobsTabProps> = ({
     setIsMappingModalOpen(true);
   };
 
-  // ── Handle Confirm Mapping ➔ Uploads File & Opens Step 2 Modal (Batch Job Started) ────
-  const handleConfirmMapping = async (_mappings: FieldMappingIn[]) => {
+  // ── Handle Confirm Mapping ➔ Saves Mapping, Uploads File & Opens Step 2 Modal ────
+  const handleConfirmMapping = async (mappings: FieldMappingIn[]) => {
     if (!pendingUpload) return;
     const { sourceId, stream, file } = pendingUpload;
 
     try {
+      // Persist whatever the user edited/AI-guessed in the modal before
+      // uploading - previously this was silently discarded (the mappings
+      // param went unused), so nothing typed in the modal ever reached the DB.
+      await fieldMappingService.createVersion(stream, mappings);
       const job = await ingestionJobService.upload(sourceId, stream, file);
       setIsMappingModalOpen(false);
       setCreatedBatchJob(job);
@@ -381,7 +391,8 @@ export const JobsTab: React.FC<JobsTabProps> = ({
             setIsMappingModalOpen(false);
             setPendingUpload(null);
           }}
-          sourceId={pendingUpload.sourceId}
+          stream={pendingUpload.stream}
+          file={pendingUpload.file}
           categoryName={pendingUpload.categoryName}
           fileName={pendingUpload.file.name}
           onConfirmMapping={handleConfirmMapping}

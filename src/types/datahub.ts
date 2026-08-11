@@ -64,10 +64,13 @@ export interface DataSourceOut {
   entity_id: string;
   name: string;
   kind: DataSourceKind;
+  stream: IngestionStream;
   status: DataSourceStatus;
 }
 
 // ── Field Mappings ────────────────────────────────────────────────────────────
+// Scoped globally per stream (BANK/INVOICE/CUSTOMER/...), not per data source -
+// one shared mapping is reused by every source/entity/org ingesting that stream.
 
 export interface FieldMappingIn {
   source_field: string;
@@ -78,13 +81,18 @@ export interface FieldMappingIn {
 
 export interface FieldMappingOut extends FieldMappingIn {
   mapping_id: string;
-  source_id: string;
+  stream: IngestionStream;
   version: number;
   is_active: boolean;
 }
 
 export interface FieldMappingVersionCreate {
   mappings: FieldMappingIn[];
+}
+
+export interface ResolvedHeader {
+  source_field: string;
+  matched: boolean;
 }
 
 // ── Mapping Preview ───────────────────────────────────────────────────────────

@@ -66,15 +66,21 @@ export const SchemasTab: React.FC<SchemasTabProps> = ({
     }
   }, [sourcesList]);
 
-  // 2. Fetch field mappings for selected data source ID
+  const selectedSource = dataSources.find((s) => s.source_id === selectedSourceId);
+  const selectedSourceName = selectedSource?.name || 'Selected Source';
+  const selectedStream = selectedSource?.stream;
+
+  // 2. Fetch the global mapping for the selected source's stream - shared by
+  // every other source/entity/org ingesting the same stream, so switching
+  // between two sources of the same stream shows the identical mapping.
   useEffect(() => {
-    if (!selectedSourceId) return;
+    if (!selectedStream) return;
 
     let isCancelled = false;
     const fetchMappings = async () => {
       setIsLoading(true);
       try {
-        const data = await fieldMappingService.getActive(selectedSourceId);
+        const data = await fieldMappingService.getActive(selectedStream);
         if (!isCancelled) {
           setLiveMappings(data);
         }
@@ -89,10 +95,7 @@ export const SchemasTab: React.FC<SchemasTabProps> = ({
 
     fetchMappings();
     return () => { isCancelled = true; };
-  }, [selectedSourceId]);
-
-  const selectedSource = dataSources.find((s) => s.source_id === selectedSourceId);
-  const selectedSourceName = selectedSource?.name || 'Selected Source';
+  }, [selectedStream]);
 
   // Combine liveMappings or fallbackMappings for rendering
   const displayFields = liveMappings.length > 0

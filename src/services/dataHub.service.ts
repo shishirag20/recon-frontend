@@ -17,18 +17,21 @@ import type {
   FieldMappingIn,
   MappingPreviewRequest,
   MappingPreviewResponse,
+  ResolvedHeader,
   IngestionJobOut,
   CanonicalRecordOut,
   CanonicalRecordUpdate,
 } from '../types/datahub';
 
 let dataSourcesCache: DataSourceOut[] | null = null;
-const fieldMappingsCache = new Map<string, FieldMappingOut[]>();
+const fieldMappingsCache = new Map<string, FieldMappingOut[]>(); // keyed by stream, not source_id
+const canonicalFieldsCache = new Map<string, string[]>(); // keyed by stream; changes rarely
 const canonicalRecordsCache = new Map<string, CanonicalRecordOut[]>();
 
 export function clearDataHubServiceCaches() {
   dataSourcesCache = null;
   fieldMappingsCache.clear();
+  canonicalFieldsCache.clear();
   canonicalRecordsCache.clear();
 }
 
@@ -73,36 +76,67 @@ export const dataSourceService = {
 };
 
 // ── Field Mappings ──────────────────────────────────────────────────────────────
+// Global per stream (BANK/INVOICE/CUSTOMER/...) - shared by every data source/
+// entity/org ingesting that stream, not configured per data source.
 
 export const fieldMappingService = {
   /**
-   * GET /data-sources/{source_id}/field-mappings
-   * Caches in-memory per source_id.
+   * GET /field-mappings/{stream}
+   * Caches in-memory per stream.
    */
-  async getActive(sourceId: string, forceRefresh = false): Promise<FieldMappingOut[]> {
-    if (fieldMappingsCache.has(sourceId) && !forceRefresh) {
-      return Promise.resolve(fieldMappingsCache.get(sourceId)!);
+  async getActive(stream: string, forceRefresh = false): Promise<FieldMappingOut[]> {
+    if (fieldMappingsCache.has(stream) && !forceRefresh) {
+      return Promise.resolve(fieldMappingsCache.get(stream)!);
     }
-    const res = await api.get<FieldMappingOut[]>(API_ROUTES.DATA_HUB.FIELD_MAPPINGS(sourceId));
-    fieldMappingsCache.set(sourceId, res);
+    const res = await api.get<FieldMappingOut[]>(API_ROUTES.DATA_HUB.FIELD_MAPPINGS(stream));
+    fieldMappingsCache.set(stream, res);
     return res;
   },
 
   /**
-   * POST /data-sources/{source_id}/field-mappings/versions
-   * Create a new mapping version for a data source.
+   * POST /field-mappings/{stream}/versions
+   * Create a new mapping version for a stream. Affects every data source
+   * that ingests this stream, not just the one the caller had in mind.
    */
-  async createVersion(sourceId: string, mappings: FieldMappingIn[]): Promise<FieldMappingOut[]> {
-    fieldMappingsCache.delete(sourceId);
-    return api.post<FieldMappingOut[]>(API_ROUTES.DATA_HUB.FIELD_MAPPING_VERSIONS(sourceId), { mappings });
+  async createVersion(stream: string, mappings: FieldMappingIn[]): Promise<FieldMappingOut[]> {
+    fieldMappingsCache.delete(stream);
+    return api.post<FieldMappingOut[]>(API_ROUTES.DATA_HUB.FIELD_MAPPING_VERSIONS(stream), { mappings });
   },
 
   /**
-   * POST /data-sources/{source_id}/field-mappings/preview
+   * POST /field-mappings/{stream}/preview
    * Dry-run mapping rules against sample rows.
    */
-  async preview(sourceId: string, payload: MappingPreviewRequest): Promise<MappingPreviewResponse> {
-    return api.post<MappingPreviewResponse>(API_ROUTES.DATA_HUB.FIELD_MAPPING_PREVIEW(sourceId), payload);
+  async preview(stream: string, payload: MappingPreviewRequest): Promise<MappingPreviewResponse> {
+    return api.post<MappingPreviewResponse>(API_ROUTES.DATA_HUB.FIELD_MAPPING_PREVIEW(stream), payload);
+  },
+
+  /**
+   * POST /field-mappings/{stream}/resolve-headers
+   * Checks a file's actual column headers against the stream's active
+   * mapping - which are already understood vs. genuinely new for this file.
+   */
+  async resolveHeaders(stream: string, columns: string[]): Promise<ResolvedHeader[]> {
+    const res = await api.post<{ results: ResolvedHeader[] }>(
+      API_ROUTES.DATA_HUB.FIELD_MAPPING_RESOLVE(stream),
+      { columns }
+    );
+    return res.results;
+  },
+
+  /**
+   * GET /field-mappings/{stream}/canonical-fields
+   * The real per-stream mapping-target list. Caches in-memory per stream.
+   */
+  async canonicalFields(stream: string, forceRefresh = false): Promise<string[]> {
+    if (canonicalFieldsCache.has(stream) && !forceRefresh) {
+      return Promise.resolve(canonicalFieldsCache.get(stream)!);
+    }
+    const res = await api.get<{ canonical_fields: string[] }>(
+      API_ROUTES.DATA_HUB.FIELD_MAPPING_CANONICAL_FIELDS(stream)
+    );
+    canonicalFieldsCache.set(stream, res.canonical_fields);
+    return res.canonical_fields;
   },
 };
 
