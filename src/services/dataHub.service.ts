@@ -17,7 +17,7 @@ import type {
   FieldMappingIn,
   MappingPreviewRequest,
   MappingPreviewResponse,
-  ResolvedHeader,
+  ResolveHeadersResult,
   IngestionJobOut,
   CanonicalRecordOut,
   CanonicalRecordUpdate,
@@ -113,15 +113,16 @@ export const fieldMappingService = {
 
   /**
    * POST /field-mappings/{stream}/resolve-headers
-   * Checks a file's actual column headers against the stream's active
-   * mapping - which are already understood vs. genuinely new for this file.
+   * Resolves a file's actual column headers against the stream's active
+   * mapping in one call: returns just the mapping rows relevant to this file
+   * (header matches + CONST rows) plus whichever columns are genuinely new -
+   * no separate `getActive` fetch needed to build a per-file mapping UI.
    */
-  async resolveHeaders(stream: string, columns: string[]): Promise<ResolvedHeader[]> {
-    const res = await api.post<{ results: ResolvedHeader[] }>(
+  async resolveHeaders(stream: string, columns: string[]): Promise<ResolveHeadersResult> {
+    return api.post<ResolveHeadersResult>(
       API_ROUTES.DATA_HUB.FIELD_MAPPING_RESOLVE(stream),
       { columns }
     );
-    return res.results;
   },
 
   /**

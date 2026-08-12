@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { fieldMappingService } from '../../services/dataHub.service';
 import { readCsvHeaders } from '../../utils/csv';
-import type { FieldMappingIn, TransformType } from '../../types/datahub';
+import type { FieldMappingIn, FieldMappingOut, TransformType } from '../../types/datahub';
 
 interface MappingRow {
   id: string;
@@ -62,55 +62,54 @@ export const FieldMappingTransformModal: React.FC<FieldMappingTransformModalProp
     if (!isOpen) return;
 
     let cancelled = false;
+
+    const toRows = (list: FieldMappingOut[]): MappingRow[] =>
+      list.map((m, idx) => ({
+        id: m.mapping_id || `map-${idx}`,
+        source_field: m.source_field,
+        canonical_field: m.canonical_field,
+        transform: m.transform || 'NONE',
+      }));
+
     const load = async () => {
       setIsLoading(true);
       try {
-        // Base rows: the stream's real active mapping (shared globally per
-        // stream - see migration 0026). Kept as-is rather than rebuilt from
-        // the file's headers, since a single header can fan out into several
-        // rows via CONST (e.g. one "amount" column driving amount_minor,
-        // currency, and dr_cr) - rebuilding from headers alone would drop those.
-        const [mappings, fields] = await Promise.all([
-          fieldMappingService.getActive(stream),
-          fieldMappingService.canonicalFields(stream),
-        ]);
+        const fields = await fieldMappingService.canonicalFields(stream);
         if (cancelled) return;
-
-        const baseRows: MappingRow[] = mappings.map((m, idx) => ({
-          id: m.mapping_id || `map-${idx}`,
-          source_field: m.source_field,
-          canonical_field: m.canonical_field,
-          transform: m.transform || 'NONE',
-        }));
         setCanonicalFieldOptions(fields);
 
-        // Enrichment: check this specific file's actual headers against the
-        // DB dictionary, and append only the ones genuinely not covered yet -
-        // surfaces what's actually new about this file instead of a static
-        // list. Best-effort: a non-CSV file or a read failure just falls back
-        // to showing the active mapping alone.
+        // Resolve this file's real headers against the active mapping in one
+        // call: the backend returns just the rows relevant to this file
+        // (header matches, plus CONST rows - CONST ignores the raw value
+        // entirely, so its source_field never needs to appear in the file,
+        // e.g. one "amount" column driving amount_minor, currency, and dr_cr
+        // via three separate rows) and whichever columns are genuinely new.
+        // No separate full-dictionary fetch on this path.
         try {
           const headers = await readCsvHeaders(file);
           if (headers.length > 0) {
-            const resolved = await fieldMappingService.resolveHeaders(stream, headers);
-            const newRows: MappingRow[] = resolved
-              .filter((r) => !r.matched)
-              .map((r, idx) => ({
-                id: `new-${idx}-${r.source_field}`,
-                source_field: r.source_field,
-                canonical_field: fields[0] || '',
-                transform: 'NONE' as TransformType,
-                isNew: true,
-              }));
-            if (!cancelled && newRows.length > 0) {
-              setRows([...baseRows, ...newRows]);
+            const { matched, unmatched_columns } = await fieldMappingService.resolveHeaders(stream, headers);
+            const newRows: MappingRow[] = unmatched_columns.map((source_field, idx) => ({
+              id: `new-${idx}-${source_field}`,
+              source_field,
+              canonical_field: fields[0] || '',
+              transform: 'NONE' as TransformType,
+              isNew: true,
+            }));
+            if (!cancelled) {
+              setRows([...toRows(matched), ...newRows]);
               return;
             }
           }
         } catch {
-          // fall through to base rows only
+          // fall through - non-CSV file, or a read/resolve failure
         }
-        if (!cancelled) setRows(baseRows);
+
+        // Fallback: the file's headers couldn't be read or resolved - show
+        // the full active mapping rather than nothing. Only path that still
+        // needs the full-dictionary fetch.
+        const mappings = await fieldMappingService.getActive(stream);
+        if (!cancelled) setRows(toRows(mappings));
       } catch {
         if (!cancelled) {
           setRows([]);

@@ -90,9 +90,15 @@ export interface FieldMappingVersionCreate {
   mappings: FieldMappingIn[];
 }
 
-export interface ResolvedHeader {
-  source_field: string;
-  matched: boolean;
+export interface ResolveHeadersResult {
+  /** The subset of the stream's active mapping actually relevant to this
+   * file: a row whose source_field matched one of the given columns, or a
+   * CONST row (its source_field is a placeholder that never needs to be a
+   * real column). Already filtered server-side - no separate `getActive`
+   * call needed to build a per-file mapping UI. */
+  matched: FieldMappingOut[];
+  /** Columns from the request that matched no synonym at all. */
+  unmatched_columns: string[];
 }
 
 // ── Mapping Preview ───────────────────────────────────────────────────────────
