@@ -7,6 +7,7 @@ import {
   RefreshCw,
   FileSpreadsheet,
   CheckCircle2,
+  XCircle,
 } from 'lucide-react';
 import type { IngestionJobOut, DataSourceOut, FieldMappingIn } from '../../types/datahub';
 import { getStreamByCategory } from '../../types/datahub';
@@ -250,9 +251,6 @@ export const JobsTab: React.FC<JobsTabProps> = ({
                           <span className="font-semibold text-slate-900 truncate text-[11.5px]">
                             {latestJob.file_name}
                           </span>
-                          <span className="text-[10px] text-slate-400 tnum">
-                            {latestJob.row_count} rows • {latestJob.error_count} errors
-                          </span>
                         </div>
                       </div>
 
@@ -303,9 +301,8 @@ export const JobsTab: React.FC<JobsTabProps> = ({
                 <th className="px-4 py-3">Format</th>
                 <th className="px-4 py-3 text-right">Rows</th>
                 <th className="px-4 py-3 text-right">Errors</th>
-                <th className="px-4 py-3 text-center">Status</th>
                 <th className="px-4 py-3 text-right">Started</th>
-                <th className="px-4 py-3 text-center">Actions</th>
+                <th className="px-4 py-3 text-center">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -335,34 +332,22 @@ export const JobsTab: React.FC<JobsTabProps> = ({
                         {job.error_count}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${STATUS_STYLES[statusKey] || 'bg-slate-100 text-slate-700'}`}>
-                        {STATUS_LABEL[statusKey] || statusKey}
-                      </span>
-                    </td>
                     <td className="px-4 py-3 text-right font-mono text-slate-400">
                       {job.started_at.slice(0, 10)} {job.started_at.slice(11, 16)}
                     </td>
-                    {/* Action Buttons — stop row click propagation */}
-                    <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                    <td className="px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-1.5">
-                        {(job.status === 'SUCCESS' || job.status === 'PARTIAL') && (
+                        {job.status === 'SUCCESS' && (
                           <span className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
                             <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                             Ingested
                           </span>
                         )}
-                        {job.status === 'FAILED' && (
-                          <Button
-                            variant="warning"
-                            size="xs"
-                            icon={RefreshCw}
-                            onClick={() => handleRetry(job.job_id)}
-                            disabled={actioningJobId === job.job_id}
-                            title="Reset and retry this failed job"
-                          >
-                            Retry
-                          </Button>
+                        {(job.status === 'FAILED' || job.status === 'PARTIAL') && (
+                          <span className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-md bg-rose-50 text-rose-700 border border-rose-200">
+                            <XCircle className="w-3 h-3 text-rose-600" />
+                            Failure
+                          </span>
                         )}
                         {(job.status === 'PENDING' || job.status === 'RUNNING') && (
                           <span className="text-[10px] text-slate-400 font-medium">Processing…</span>
@@ -374,7 +359,7 @@ export const JobsTab: React.FC<JobsTabProps> = ({
               })}
               {displayJobs.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-xs text-slate-400">
+                  <td colSpan={7} className="px-4 py-8 text-center text-xs text-slate-400">
                     No ingestion jobs yet. Click a Data Source card above to upload your first statement file.
                   </td>
                 </tr>
