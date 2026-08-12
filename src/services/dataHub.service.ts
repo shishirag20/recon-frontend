@@ -7,7 +7,8 @@
  *  - ingestionJobService — File upload, list, poll, retry
  *  - recordsService      — List, get, and patch live canonical job records
  * 
- * Includes client-side in-memory caching to prevent duplicate API requests.
+ * Includes client-side in-memory caching (using Promises) to prevent duplicate API requests
+ * and eliminate race conditions when multiple components request the same data concurrently.
  */
 import { API_ROUTES } from './api/config';
 import { api } from './api/client';
@@ -23,99 +24,76 @@ import type {
   CanonicalRecordUpdate,
 } from '../types/datahub';
 
-let dataSourcesCache: DataSourceOut[] | null = null;
-const fieldMappingsCache = new Map<string, FieldMappingOut[]>(); // keyed by stream, not source_id
-const canonicalFieldsCache = new Map<string, string[]>(); // keyed by stream; changes rarely
-const canonicalRecordsCache = new Map<string, CanonicalRecordOut[]>();
+let dataSourcesPromise: Promise<DataSourceOut[]> | null = null;
+const fieldMappingsPromises = new Map<string, Promise<FieldMappingOut[]>>();
+const canonicalFieldsPromises = new Map<string, Promise<string[]>>();
+const canonicalRecordsPromises = new Map<string, Promise<CanonicalRecordOut[]>>();
+
+// Deduplicate concurrent requests for ingestion jobs (React Strict Mode double-fetches)
+// but don't cache permanently since jobs are highly dynamic.
+let pendingIngestionJobsPromise: Promise<IngestionJobOut[]> | null = null;
+let pendingIngestionJobsParamsStr = '';
 
 export function clearDataHubServiceCaches() {
-  dataSourcesCache = null;
-  fieldMappingsCache.clear();
-  canonicalFieldsCache.clear();
-  canonicalRecordsCache.clear();
+  dataSourcesPromise = null;
+  fieldMappingsPromises.clear();
+  canonicalFieldsPromises.clear();
+  canonicalRecordsPromises.clear();
 }
 
 // ── Data Sources ────────────────────────────────────────────────────────────────
 
 export const dataSourceService = {
-  /**
-   * GET /data-sources — List all registered data sources.
-   * Caches in-memory to prevent duplicate network calls across components.
-   */
   async list(forceRefresh = false): Promise<DataSourceOut[]> {
-    if (dataSourcesCache && !forceRefresh) {
-      return Promise.resolve(dataSourcesCache);
+    if (dataSourcesPromise && !forceRefresh) {
+      return dataSourcesPromise;
     }
-    const res = await api.get<DataSourceOut[]>(API_ROUTES.DATA_HUB.DATA_SOURCES);
-    dataSourcesCache = res;
-    return res;
+    dataSourcesPromise = api.get<DataSourceOut[]>(API_ROUTES.DATA_HUB.DATA_SOURCES).catch(err => {
+      dataSourcesPromise = null;
+      throw err;
+    });
+    return dataSourcesPromise;
   },
 
-  /**
-   * GET /data-sources/{source_id} — Get details for a single data source.
-   */
   async get(sourceId: string): Promise<DataSourceOut> {
     return api.get<DataSourceOut>(API_ROUTES.DATA_HUB.DATA_SOURCE(sourceId));
   },
 
-  /**
-   * POST /data-sources — Create a new data source.
-   */
   async create(payload: { entity_id: string; name: string; kind: string }): Promise<DataSourceOut> {
-    dataSourcesCache = null;
+    dataSourcesPromise = null;
     return api.post<DataSourceOut>(API_ROUTES.DATA_HUB.DATA_SOURCES, payload);
   },
 
-  /**
-   * PATCH /data-sources/{source_id} — Update data source details.
-   */
   async update(sourceId: string, payload: { name?: string; status?: string }): Promise<DataSourceOut> {
-    dataSourcesCache = null;
+    dataSourcesPromise = null;
     return api.patch<DataSourceOut>(API_ROUTES.DATA_HUB.DATA_SOURCE(sourceId), payload);
   },
 };
 
 // ── Field Mappings ──────────────────────────────────────────────────────────────
-// Global per stream (BANK/INVOICE/CUSTOMER/...) - shared by every data source/
-// entity/org ingesting that stream, not configured per data source.
 
 export const fieldMappingService = {
-  /**
-   * GET /field-mappings/{stream}
-   * Caches in-memory per stream.
-   */
   async getActive(stream: string, forceRefresh = false): Promise<FieldMappingOut[]> {
-    if (fieldMappingsCache.has(stream) && !forceRefresh) {
-      return Promise.resolve(fieldMappingsCache.get(stream)!);
+    if (fieldMappingsPromises.has(stream) && !forceRefresh) {
+      return fieldMappingsPromises.get(stream)!;
     }
-    const res = await api.get<FieldMappingOut[]>(API_ROUTES.DATA_HUB.FIELD_MAPPINGS(stream));
-    fieldMappingsCache.set(stream, res);
-    return res;
+    const promise = api.get<FieldMappingOut[]>(API_ROUTES.DATA_HUB.FIELD_MAPPINGS(stream)).catch(err => {
+      fieldMappingsPromises.delete(stream);
+      throw err;
+    });
+    fieldMappingsPromises.set(stream, promise);
+    return promise;
   },
 
-  /**
-   * POST /field-mappings/{stream}/versions
-   * Create a new mapping version for a stream. Affects every data source
-   * that ingests this stream, not just the one the caller had in mind.
-   */
   async createVersion(stream: string, mappings: FieldMappingIn[]): Promise<FieldMappingOut[]> {
-    fieldMappingsCache.delete(stream);
+    fieldMappingsPromises.delete(stream);
     return api.post<FieldMappingOut[]>(API_ROUTES.DATA_HUB.FIELD_MAPPING_VERSIONS(stream), { mappings });
   },
 
-  /**
-   * POST /field-mappings/{stream}/preview
-   * Dry-run mapping rules against sample rows.
-   */
   async preview(stream: string, payload: MappingPreviewRequest): Promise<MappingPreviewResponse> {
     return api.post<MappingPreviewResponse>(API_ROUTES.DATA_HUB.FIELD_MAPPING_PREVIEW(stream), payload);
   },
 
-  /**
-   * POST /field-mappings/{stream}/resolve-headers
-   * Checks a file's actual column headers against the stream's active
-   * mapping - which are already understood vs. genuinely new for this file.
-   */
   async resolveHeaders(stream: string, columns: string[]): Promise<ResolvedHeader[]> {
     const res = await api.post<{ results: ResolvedHeader[] }>(
       API_ROUTES.DATA_HUB.FIELD_MAPPING_RESOLVE(stream),
@@ -124,42 +102,49 @@ export const fieldMappingService = {
     return res.results;
   },
 
-  /**
-   * GET /field-mappings/{stream}/canonical-fields
-   * The real per-stream mapping-target list. Caches in-memory per stream.
-   */
   async canonicalFields(stream: string, forceRefresh = false): Promise<string[]> {
-    if (canonicalFieldsCache.has(stream) && !forceRefresh) {
-      return Promise.resolve(canonicalFieldsCache.get(stream)!);
+    if (canonicalFieldsPromises.has(stream) && !forceRefresh) {
+      return canonicalFieldsPromises.get(stream)!;
     }
-    const res = await api.get<{ canonical_fields: string[] }>(
+    const promise = api.get<{ canonical_fields: string[] }>(
       API_ROUTES.DATA_HUB.FIELD_MAPPING_CANONICAL_FIELDS(stream)
-    );
-    canonicalFieldsCache.set(stream, res.canonical_fields);
-    return res.canonical_fields;
+    ).then(res => res.canonical_fields).catch(err => {
+      canonicalFieldsPromises.delete(stream);
+      throw err;
+    });
+    canonicalFieldsPromises.set(stream, promise);
+    return promise;
   },
 };
 
 // ── Ingestion Jobs ──────────────────────────────────────────────────────────────
 
 export const ingestionJobService = {
-  /**
-   * GET /ingestion-jobs — List all ingestion jobs.
-   */
   async list(params?: { source_id?: string; status?: string; limit?: number; offset?: number }): Promise<IngestionJobOut[]> {
-    return api.get<IngestionJobOut[]>(API_ROUTES.DATA_HUB.INGESTION_JOBS, { params });
+    const paramsStr = JSON.stringify(params || {});
+    
+    // Deduplicate identical concurrent inflight requests (e.g. from React Strict Mode double-render)
+    if (pendingIngestionJobsPromise && pendingIngestionJobsParamsStr === paramsStr) {
+      return pendingIngestionJobsPromise;
+    }
+    
+    const promise = api.get<IngestionJobOut[]>(API_ROUTES.DATA_HUB.INGESTION_JOBS, { params })
+      .finally(() => {
+        if (pendingIngestionJobsPromise === promise) {
+          pendingIngestionJobsPromise = null;
+        }
+      });
+      
+    pendingIngestionJobsPromise = promise;
+    pendingIngestionJobsParamsStr = paramsStr;
+    
+    return promise;
   },
 
-  /**
-   * GET /ingestion-jobs/{job_id} — Poll job execution status.
-   */
   async get(jobId: string): Promise<IngestionJobOut> {
     return api.get<IngestionJobOut>(API_ROUTES.DATA_HUB.INGESTION_JOB(jobId));
   },
 
-  /**
-   * POST /ingestion-jobs — Upload a CSV file for direct background ingestion.
-   */
   async upload(sourceId: string, stream: string, file: File): Promise<IngestionJobOut> {
     const form = new FormData();
     form.append('source_id', sourceId);
@@ -167,14 +152,10 @@ export const ingestionJobService = {
     form.append('format', 'CSV');
     form.append('file', file);
 
-    // Invalidate canonical records cache when new job uploaded
-    canonicalRecordsCache.clear();
+    canonicalRecordsPromises.clear();
     return api.postForm<IngestionJobOut>(API_ROUTES.DATA_HUB.INGESTION_JOBS, form);
   },
 
-  /**
-   * POST /ingestion-jobs/{job_id}/retry — Reset and retry a FAILED job.
-   */
   async retry(jobId: string): Promise<IngestionJobOut> {
     return api.post<IngestionJobOut>(API_ROUTES.DATA_HUB.INGESTION_JOB_RETRY(jobId));
   },
@@ -183,10 +164,6 @@ export const ingestionJobService = {
 // ── Canonical Records (Data Explorer) ─────────────────────────────────────────────
 
 export const recordsService = {
-  /**
-   * GET /records?stream={stream}&entity_id={entity_id}
-   * Fetches canonical records for an entity by stream (BANK, INVOICE, CUSTOMER, LEDGER).
-   */
   async listByStream(
     stream: string,
     entityId: string,
@@ -195,25 +172,24 @@ export const recordsService = {
   ): Promise<CanonicalRecordOut[]> {
     const cacheKey = `stream_${stream}_entity_${entityId}_valid_${params?.valid ?? 'all'}`;
 
-    if (canonicalRecordsCache.has(cacheKey) && !forceRefresh && !params?.search) {
-      return Promise.resolve(canonicalRecordsCache.get(cacheKey)!);
+    if (canonicalRecordsPromises.has(cacheKey) && !forceRefresh && !params?.search) {
+      return canonicalRecordsPromises.get(cacheKey)!;
     }
 
-    const res = await api.get<CanonicalRecordOut[]>(
+    const promise = api.get<CanonicalRecordOut[]>(
       API_ROUTES.DATA_HUB.RECORDS_BY_STREAM,
       { params: { stream, entity_id: entityId, ...params } as Record<string, string | number | boolean | undefined> }
-    );
+    ).catch(err => {
+      canonicalRecordsPromises.delete(cacheKey);
+      throw err;
+    });
 
     if (!params?.search) {
-      canonicalRecordsCache.set(cacheKey, res);
+      canonicalRecordsPromises.set(cacheKey, promise);
     }
-    return res;
+    return promise;
   },
 
-  /**
-   * GET /ingestion-jobs/{job_id}/records
-   * Caches in-memory by jobId + valid filter.
-   */
   async list(
     jobId: string,
     params?: { valid?: boolean; search?: string; limit?: number; offset?: number },
@@ -221,39 +197,36 @@ export const recordsService = {
   ): Promise<CanonicalRecordOut[]> {
     const cacheKey = `${jobId}_valid_${params?.valid ?? 'all'}`;
 
-    if (canonicalRecordsCache.has(cacheKey) && !forceRefresh && !params?.search) {
-      return Promise.resolve(canonicalRecordsCache.get(cacheKey)!);
+    if (canonicalRecordsPromises.has(cacheKey) && !forceRefresh && !params?.search) {
+      return canonicalRecordsPromises.get(cacheKey)!;
     }
 
-    const res = await api.get<CanonicalRecordOut[]>(
+    const promise = api.get<CanonicalRecordOut[]>(
       API_ROUTES.DATA_HUB.INGESTION_JOB_RECORDS(jobId),
       { params: params as Record<string, string | number | boolean | undefined> }
-    );
+    ).catch(err => {
+      canonicalRecordsPromises.delete(cacheKey);
+      throw err;
+    });
 
     if (!params?.search) {
-      canonicalRecordsCache.set(cacheKey, res);
+      canonicalRecordsPromises.set(cacheKey, promise);
     }
-    return res;
+    return promise;
   },
 
-  /**
-   * GET /ingestion-jobs/{job_id}/records/{record_id}
-   */
   async get(jobId: string, recordId: string): Promise<CanonicalRecordOut> {
     return api.get<CanonicalRecordOut>(
       API_ROUTES.DATA_HUB.INGESTION_JOB_RECORD(jobId, recordId)
     );
   },
 
-  /**
-   * PATCH /ingestion-jobs/{job_id}/records/{record_id} — Correct a record's canonical fields.
-   */
   async patch(
     jobId: string,
     recordId: string,
     update: CanonicalRecordUpdate
   ): Promise<CanonicalRecordOut> {
-    canonicalRecordsCache.clear();
+    canonicalRecordsPromises.clear();
     return api.patch<CanonicalRecordOut>(
       API_ROUTES.DATA_HUB.INGESTION_JOB_RECORD(jobId, recordId),
       update
