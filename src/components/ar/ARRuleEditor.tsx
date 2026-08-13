@@ -81,37 +81,46 @@ export const ARRuleEditor: React.FC<ARRuleEditorProps> = ({
         <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
           Field Comparison Pair
         </label>
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="bg-slate-200/60 px-2.5 py-1 rounded-md text-slate-600 font-mono text-[11.5px]">
-            Bank Statement
-          </span>
-          <select
-            value={rule.bankField || 'narration'}
-            onChange={(e) => onUpdateRule({ ...rule, bankField: e.target.value })}
-            className="bg-white border border-slate-200 rounded-lg px-2.5 h-8 font-mono text-[11.5px] text-slate-800 focus:outline-none focus:border-indigo-600"
-          >
-            <option value="narration">narration</option>
-            <option value="payer_account_number">payer_account_number</option>
-            <option value="bank_reference_number">bank_reference_number</option>
-            <option value="amount">amount</option>
-          </select>
+        {rule.kind === 'dup-utr' ? (
+          // dup-utr compares a bank row's own reference against every other
+          // reference in the same run/batch - there's no second table/field
+          // to pick from a dropdown for, unlike every other rule here.
+          <div className="text-[11.5px] text-slate-600 font-mono bg-slate-200/60 px-2.5 py-1.5 rounded-md inline-block">
+            Bank reference number (UTR) ↔ every other bank reference number in this run
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="bg-slate-200/60 px-2.5 py-1 rounded-md text-slate-600 font-mono text-[11.5px]">
+              Bank Statement
+            </span>
+            <select
+              value={rule.bankField || 'narration'}
+              onChange={(e) => onUpdateRule({ ...rule, bankField: e.target.value })}
+              className="bg-white border border-slate-200 rounded-lg px-2.5 h-8 font-mono text-[11.5px] text-slate-800 focus:outline-none focus:border-indigo-600"
+            >
+              <option value="narration">narration</option>
+              <option value="payer_account_number">payer_account_number</option>
+              <option value="bank_reference_number">bank_reference_number</option>
+              <option value="amount">amount</option>
+            </select>
 
-          <span className="text-slate-400 font-bold">↔</span>
+            <span className="text-slate-400 font-bold">↔</span>
 
-          <span className="bg-slate-200/60 px-2.5 py-1 rounded-md text-slate-600 font-medium text-[11.5px]">
-            {rule.secondSource || 'Customer / Invoice Master'}
-          </span>
-          <select
-            value={rule.secondField || 'customer_code'}
-            onChange={(e) => onUpdateRule({ ...rule, secondField: e.target.value })}
-            className="bg-white border border-slate-200 rounded-lg px-2.5 h-8 font-mono text-[11.5px] text-slate-800 focus:outline-none focus:border-indigo-600"
-          >
-            <option value="customer_code">customer_code</option>
-            <option value="invoice_number">invoice_number</option>
-            <option value="bank_account_number">bank_account_number</option>
-            <option value="gstin">gstin</option>
-          </select>
-        </div>
+            <span className="bg-slate-200/60 px-2.5 py-1 rounded-md text-slate-600 font-medium text-[11.5px]">
+              {rule.secondSource || 'Customer / Invoice Master'}
+            </span>
+            <select
+              value={rule.secondField || 'customer_code'}
+              onChange={(e) => onUpdateRule({ ...rule, secondField: e.target.value })}
+              className="bg-white border border-slate-200 rounded-lg px-2.5 h-8 font-mono text-[11.5px] text-slate-800 focus:outline-none focus:border-indigo-600"
+            >
+              <option value="customer_code">customer_code</option>
+              <option value="invoice_number">invoice_number</option>
+              <option value="bank_account_number">bank_account_number</option>
+              <option value="gstin">gstin</option>
+            </select>
+          </div>
+        )}
       </div>
 
       {/* Match Mode Picker */}
