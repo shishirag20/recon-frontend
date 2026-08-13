@@ -74,7 +74,9 @@ function normalizeRule(r: any): ARRule {
     CUSTOMER_LOCK: 'customer-lock',
     CANDIDATE_POOL: 'candidate-pool',
     ALLOCATION: 'allocation',
-    INTAKE: 'intake',
+    INTAKE_VALIDATION: 'intake',
+    SHORT_PAY: 'short-pay',
+    UNAPPLIED: 'unapplied',
     GL_CHECK: 'gl-check',
   };
 
