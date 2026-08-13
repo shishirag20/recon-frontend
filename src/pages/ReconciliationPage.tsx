@@ -44,7 +44,7 @@ const LIBRARY_CATEGORIES: LibraryCategory[] = [
 export const ReconciliationPage: React.FC = () => {
   const { category } = useParams<{ category?: string }>();
   const navigate = useNavigate();
-  const [subFilter, setSubFilter] = useState<'all' | 'mine' | 'needs-resolution' | 'completed'>('needs-resolution');
+  const [subFilter, setSubFilter] = useState<'all' | 'mine' | 'needs-resolution' | 'completed'>('all');
 
   const jobs = useReconciliationStore((s) => s.jobs);
   const fetchJobs = useReconciliationStore((s) => s.fetchJobs);

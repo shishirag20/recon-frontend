@@ -90,7 +90,7 @@ export interface Reconciliation {
   owner?: string;
   due?: string;
   cadence?: string;
-  lastRun: string;
+  lastRun?: string;
   sourceLeft: string;
   sourceRight: string;
   arFinished?: boolean;
@@ -164,7 +164,7 @@ export interface Rule {
   type: RuleType;
   enabled: boolean;
   priority?: number;
-  confidence?: number;
+  confidence?: number | null;
   fieldMap?: Record<string, string>;
   toleranceAmount?: number;
   windowDays?: number;
@@ -210,7 +210,7 @@ export interface ARRule {
   kind: string;
   phase?: number | string;
   priority?: number;
-  confidence?: number;
+  confidence?: number | null;
   cond?: any;
   bankField?: string;
   secondSource?: string;

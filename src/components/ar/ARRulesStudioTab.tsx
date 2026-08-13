@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { arService } from '../../services/ar.service';
+import { resolveARDefinitionId } from '../../services/ar.service';
 import type { ARRule } from '../../types';
 import { ARGroupRow, type PhaseGroupMeta } from './ARGroupRow';
 import { useToast } from '../../hooks/useToast';
+import { Loader2 } from 'lucide-react';
 
 const PHASE_GROUPS: PhaseGroupMeta[] = [
   {
@@ -81,6 +83,8 @@ const PHASE_GROUPS: PhaseGroupMeta[] = [
 
 export const ARRulesStudioTab: React.FC = () => {
   const [rules, setRules] = useState<ARRule[]>([]);
+  const [definitionId, setDefinitionId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     'group-intake': true,
     'group-customer': true,
@@ -92,9 +96,20 @@ export const ARRulesStudioTab: React.FC = () => {
 
   useEffect(() => {
     let cancelled = false;
-    arService.getARRules().then((res) => {
-      if (!cancelled) setRules(res);
-    }).catch(() => {});
+    const load = async () => {
+      setLoading(true);
+      try {
+        const id = await resolveARDefinitionId();
+        if (!cancelled) setDefinitionId(id);
+        const res = await arService.getARRules(id);
+        if (!cancelled) setRules(res);
+      } catch {
+        // Silently fail — rules stay empty
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    load();
     return () => { cancelled = true; };
   }, []);
 
@@ -114,7 +129,7 @@ export const ARRulesStudioTab: React.FC = () => {
 
   const handleToggleEnableRule = async (id: string) => {
     const target = rules.find((r) => r.id === id);
-    if (!target) return;
+    if (!target || !definitionId) return;
 
     const updated = { ...target, enabled: !target.enabled };
     setRules((prev) =>
@@ -122,7 +137,7 @@ export const ARRulesStudioTab: React.FC = () => {
     );
 
     try {
-      await arService.updateARRule('rec-ar-001', updated);
+      await arService.updateARRule(definitionId, updated);
       toast('Rule status updated', 'default');
     } catch {
       toast('Failed to update rule status on server', 'bad');
@@ -171,10 +186,12 @@ export const ARRulesStudioTab: React.FC = () => {
 
   const handleUpdateRule = async (updated: ARRule) => {
     setRules((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
-    try {
-      await arService.updateARRule('rec-ar-001', updated);
-    } catch {
-      // Best-effort
+    if (definitionId) {
+      try {
+        await arService.updateARRule(definitionId, updated);
+      } catch {
+        // Best-effort
+      }
     }
   };
 
@@ -186,9 +203,9 @@ export const ARRulesStudioTab: React.FC = () => {
       kind: 'threshold',
       name: `New Custom Rule ${rulesInPhase.length + 1}`,
       enabled: true,
-      priority: rulesInPhase.length + 1,
-      confidence: 90,
-      cond: { ref: 'exact', amount: { mode: 'exact', value: 0 }, date: { days: 0 } },
+      priority: (rulesInPhase[rulesInPhase.length - 1]?.priority ?? 0) + 10,
+      confidence: null,
+      config: {},
     };
 
     setRules((prev) => [...prev, newRule]);
@@ -203,29 +220,35 @@ export const ARRulesStudioTab: React.FC = () => {
           AR reconciliation rules
         </h2>
         <p className="text-xs text-slate-500 mt-1 max-w-3xl leading-relaxed">
-          Each phase runs its own cascading rule list, first match wins — add, edit, reorder, or enable/disable rules to see matching change live. Rules can never be deleted. This is what the reconciliation runs against.
+          Each phase runs its own cascading rule list, first match wins — edit, reorder, or enable/disable rules to see matching change live. Rules can never be deleted. This is what the reconciliation runs against.
         </p>
       </div>
 
-      {/* Timeline Wrapper (.tl-wrap) */}
-      <div className="tl-wrap">
-        {PHASE_GROUPS.map((group) => (
-          <ARGroupRow
-            key={group.key}
-            group={group}
-            allRules={rules}
-            isOpen={!!openGroups[group.key]}
-            onToggleOpen={() => handleToggleGroup(group.key)}
-            editingRuleId={editingRuleId}
-            onToggleEditRule={handleToggleEditRule}
-            onToggleEnableRule={handleToggleEnableRule}
-            onMoveRuleUp={handleMoveRuleUp}
-            onMoveRuleDown={handleMoveRuleDown}
-            onUpdateRule={handleUpdateRule}
-            onAddRule={handleAddRule}
-          />
-        ))}
-      </div>
+      {loading ? (
+        <div className="flex items-center justify-center py-20 text-slate-400 gap-2">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          <span className="text-sm">Loading rules…</span>
+        </div>
+      ) : (
+        <div className="tl-wrap">
+          {PHASE_GROUPS.map((group) => (
+            <ARGroupRow
+              key={group.key}
+              group={group}
+              allRules={rules}
+              isOpen={!!openGroups[group.key]}
+              onToggleOpen={() => handleToggleGroup(group.key)}
+              editingRuleId={editingRuleId}
+              onToggleEditRule={handleToggleEditRule}
+              onToggleEnableRule={handleToggleEnableRule}
+              onMoveRuleUp={handleMoveRuleUp}
+              onMoveRuleDown={handleMoveRuleDown}
+              onUpdateRule={handleUpdateRule}
+              onAddRule={handleAddRule}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 };
