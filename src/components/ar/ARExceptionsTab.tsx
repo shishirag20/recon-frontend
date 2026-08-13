@@ -39,87 +39,13 @@ export const ARExceptionsTab: React.FC = () => {
     return () => { cancelled = true; };
   }, []);
 
-  const exceptionsList: ARExceptionItem[] = useMemo(() => {
-    const raw = arResult?.exceptions || [];
-    return [
-      {
-        id: 'EXC-001',
-        key: 'Short-Pay:INV-2026-003',
-        type: 'Short-Pay',
-        relatedId: 'INV-2026-003',
-        description: 'Beta Retail Solutions short-paid INV/2026/003 by ₹500,000.00 (UTR8803441)',
-        amount: 500000,
-        status: 'Open',
-        date: '2026-06-12',
-        customer: 'Beta Retail Solutions',
-        confidence: 90,
-      },
-      {
-        id: 'EXC-002',
-        key: 'Suspense:PAY-8804',
-        type: 'Suspense',
-        relatedId: 'PAY-8804',
-        description: '₹1,500,000.00 payment from UNKNOWN PAYER (UTR8804990) could not be identified to any customer',
-        amount: 1500000,
-        status: 'Open',
-        date: '2026-06-14',
-        customer: 'UNKNOWN PAYER',
-        confidence: 20,
-        suggestedCustomerId: 'CUST-002',
-        suggestedInvoiceId: 'INV-2026-004',
-      },
-      {
-        id: 'EXC-003',
-        key: 'Double Collision:PAY-8806',
-        type: 'Double Collision',
-        relatedId: 'PAY-8806',
-        description: '₹4,200,000.00 payment exactly matches open invoices for both Beta Retail and Gamma Logistics',
-        amount: 4200000,
-        status: 'Open',
-        date: '2026-06-15',
-        customer: 'Multiple Candidates',
-        confidence: 50,
-      },
-      {
-        id: 'EXC-004',
-        key: 'No Payment Received:INV-2026-005',
-        type: 'No Payment Received',
-        relatedId: 'INV-2026-005',
-        description: 'Gamma Logistics India invoice INV/2026/005 (₹3,500,000.00) has received no payment past 30 days',
-        amount: 3500000,
-        status: 'Open',
-        date: '2026-06-10',
-        customer: 'Gamma Logistics India',
-        confidence: 100,
-      },
-      {
-        id: 'EXC-005',
-        key: 'Bank Charge:BTXN-8805',
-        type: 'Standalone Bank Charge',
-        relatedId: 'BTXN-8805',
-        description: '₹25,000.00 SWIFT remittance charge HDFC — auto-posted JE (Dr 6100 Bank Charges / Cr 1010 Cash)',
-        amount: 25000,
-        status: 'Auto-resolved',
-        date: '2026-06-14',
-        customer: 'HDFC Bank',
-        confidence: 100,
-      },
-      ...raw.map((e, i) => ({
-        id: `EXC-00${i + 6}`,
-        key: e.key || `exc-${i}`,
-        type: e.type,
-        relatedId: e.relatedId,
-        description: e.description,
-        amount: e.amount,
-        status: (e.status || 'Open') as any,
-        date: e.date || '2026-06-14',
-        customer: e.customer || 'Customer',
-        confidence: e.confidence || 85,
-      })),
-    ];
-  }, []);
+  const [exceptions, setExceptions] = useState<ARExceptionItem[]>([]);
 
-  const [exceptions, setExceptions] = useState<ARExceptionItem[]>(exceptionsList);
+  React.useEffect(() => {
+    if (arResult?.exceptions) {
+      setExceptions(arResult.exceptions);
+    }
+  }, [arResult]);
 
   const filteredExceptions = useMemo(() => {
     let rows = exceptions.filter((e) => {

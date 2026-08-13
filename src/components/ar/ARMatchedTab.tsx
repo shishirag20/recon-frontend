@@ -26,92 +26,10 @@ export const ARMatchedTab: React.FC = () => {
     return () => { cancelled = true; };
   }, []);
 
-  // Structured matches for 100% fidelity with screenshot
+  // Fetch matches from API result
   const allMatched: MatchResult[] = useMemo(() => {
-    return [
-      {
-        invoiceId: 'INV-2026-101',
-        invoiceNum: 'INV-2026-101',
-        customer: 'Acme Technologies Pvt Ltd',
-        amount: 10000,
-        paymentId: 'PAY-BANK-001',
-        ruleName: 'Rule 2.1 : Pre-Advised UTR Match',
-        note: 'Rule 3.3 : Exact amount match',
-      },
-      {
-        invoiceId: 'INV-2026-102',
-        invoiceNum: 'INV-2026-102',
-        customer: 'Acme Technologies Pvt Ltd',
-        amount: 13500,
-        paymentId: 'PAY-BANK-002',
-        ruleName: 'Rule 2.2 : Payer Account & IFSC Match',
-        note: 'Rule 3.4 : TDS match (invoice − allowed TDS = payment)',
-      },
-      {
-        invoiceId: 'INV-2026-104',
-        invoiceNum: 'INV-2026-104',
-        customer: 'Beta Retail Solutions',
-        amount: 5980,
-        paymentId: 'PAY-BANK-004',
-        ruleName: 'Rule 2.2 : Payer Account & IFSC Match',
-        note: 'Rule 3.6 : Bank fee / minor variance',
-      },
-      {
-        invoiceId: 'INV-2026-118',
-        invoiceNum: 'INV-2026-118',
-        customer: 'Beta Retail Solutions',
-        amount: 2998,
-        paymentId: 'PAY-BANK-014',
-        ruleName: 'Rule 2.2 : Payer Account & IFSC Match',
-        note: 'Rule 3.7 : Small balance write-off',
-      },
-      {
-        invoiceId: 'INV-2026-105',
-        invoiceNum: 'INV-2026-105',
-        customer: 'Gamma Logistics India',
-        amount: 8000,
-        paymentId: 'PAY-BANK-005',
-        ruleName: 'Rule 2.3 : UPI Handle Match',
-        note: 'Rule 3.1 : Exact invoice number in narration',
-      },
-      {
-        invoiceId: 'INV-2026-1046',
-        invoiceNum: 'INV-2026-1046',
-        customer: 'Gamma Logistics India',
-        amount: 12000,
-        paymentId: 'PAY-BANK-007',
-        ruleName: 'Rule 2.4 : Customer Code in Narration Match',
-        note: 'Rule 3.2 : Invoice suffix / truncated number',
-      },
-      {
-        invoiceId: 'INV-2026-109',
-        invoiceNum: 'INV-2026-109',
-        customer: 'Delta Systems & Services',
-        amount: 5000,
-        paymentId: 'PAY-BANK-009',
-        ruleName: 'Rule 2.5 : Tax ID & PAN Match',
-        note: 'Rule 3.5 : Subset sum (many-to-many)',
-      },
-      {
-        invoiceId: 'INV-2026-110',
-        invoiceNum: 'INV-2026-110',
-        customer: 'Delta Systems & Services',
-        amount: 7000,
-        paymentId: 'PAY-BANK-009',
-        ruleName: 'Rule 2.5 : Tax ID & PAN Match',
-        note: 'Rule 3.5 : Subset sum (many-to-many)',
-      },
-      {
-        invoiceId: 'INV-2026-111',
-        invoiceNum: 'INV-2026-111',
-        customer: 'Epsilon Enterprises',
-        amount: 9000,
-        paymentId: 'PAY-BANK-010',
-        ruleName: 'Rule 2.6 : Company Name Match',
-        note: 'Rule 3.3 : Exact amount match',
-      },
-    ];
-  }, []);
+    return arResult?.matches || [];
+  }, [arResult]);
 
   // Group matches by paymentId
   const groupedMatches: MatchGroup[] = useMemo(() => {
@@ -134,28 +52,8 @@ export const ARMatchedTab: React.FC = () => {
   }, [allMatched]);
 
   const glBalances = arResult?.glControlBalances;
-  const gatewaySettlements: GatewaySettlement[] = arResult?.gatewaySettlements || [
-    {
-      settlementId: 'STL-9901',
-      gateway: 'Razorpay',
-      transactionId: 'pay_L00293182',
-      grossAmount: 150000,
-      feeAmount: 2360,
-      netAmount: 147640,
-      settlementDate: '2026-06-12',
-      matched: true,
-    },
-    {
-      settlementId: 'STL-9902',
-      gateway: 'Stripe India',
-      transactionId: 'pi_3M0192831',
-      grossAmount: 350000,
-      feeAmount: 7000,
-      netAmount: 343000,
-      settlementDate: '2026-06-13',
-      matched: true,
-    },
-  ];
+  const gatewaySettlements: GatewaySettlement[] = arResult?.gatewaySettlements || [];
+
 
   const toggleSelectMatch = (invId: string) => {
     setSelectedMatches((prev) =>

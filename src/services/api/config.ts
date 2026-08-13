@@ -13,9 +13,9 @@ export const AUTH_TOKEN_KEY =
 export const API_ROUTES = {
   // Accounts Receivable (AR)
   AR: {
-    RECONCILIATION: (id: string) => `/ar/reconciliations/${id}`,
-    RULES: (id: string) => `/ar/reconciliations/${id}/rules`,
-    RULE_BY_ID: (id: string, ruleId: string) => `/ar/reconciliations/${id}/rules/${ruleId}`,
+    RECONCILIATION: (id: string) => `/reconciliations/${id}`,
+    RULES: (id: string) => `/reconciliation/rules`,
+    RULE_BY_ID: (id: string, ruleId: string) => `/reconciliation/rules/${ruleId}`,
     INVOICES: `/ar/invoices`,
     BANK_STATEMENTS: `/ar/bank-statements`,
     CUSTOMERS: `/ar/customers`,
@@ -26,7 +26,9 @@ export const API_ROUTES = {
   RECONCILIATIONS: {
     LIST: `/reconciliations`,
     DETAIL: (id: string) => `/reconciliations/${id}`,
-    RUN: (id: string) => `/reconciliations/${id}/run`,
+    RUNS: (id: string) => `/reconciliations/${id}/run`,
+    RUN_STATUS: (runId: string) => `/runs/${runId}`,
+    RUN_RETRY: (runId: string) => `/runs/${runId}/retry`,
   },
   // DataHub — Data Sources
   DATA_HUB: {

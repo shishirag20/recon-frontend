@@ -10,12 +10,14 @@ import { ARExceptionsTab } from '../components/ar/ARExceptionsTab';
 import { useToast } from '../hooks/useToast';
 import { arService } from '../services/ar.service';
 import type { AREngineResult } from '../types';
+import { RunReconciliationModal } from '../components/reconciliation/RunReconciliationModal';
 
 export const ARWorkspacePage: React.FC = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<string>('matches');
   const [isFinished, setIsFinished] = useState<boolean>(false);
   const [arData, setArData] = useState<AREngineResult | null>(null);
+  const [isRunModalOpen, setIsRunModalOpen] = useState<boolean>(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -34,14 +36,17 @@ export const ARWorkspacePage: React.FC = () => {
     return () => { cancelled = true; };
   }, []);
 
-  const handleRunReconciliation = async () => {
-    toast('Executing AR Reconciliation engine...', 'ok');
+  const handleRunReconciliation = () => {
+    setIsRunModalOpen(true);
+  };
+
+  const handleRunComplete = async (runResult: any) => {
+    // Optionally fetch AR data again to refresh matches/exceptions
     try {
       const result = await arService.getARReconciliation('rec-ar-001');
       setArData(result);
-      toast('Reconciliation run completed.', 'ok');
     } catch {
-      toast('Reconciliation engine execution triggered.', 'ok');
+      // Fallback
     }
   };
 
@@ -127,6 +132,13 @@ export const ARWorkspacePage: React.FC = () => {
 
         {activeTab === 'exceptions' && <ARExceptionsTab />}
       </div>
+
+      <RunReconciliationModal
+        isOpen={isRunModalOpen}
+        onClose={() => setIsRunModalOpen(false)}
+        definitionId="rec-ar-001"
+        onRunComplete={handleRunComplete}
+      />
     </div>
   );
 };

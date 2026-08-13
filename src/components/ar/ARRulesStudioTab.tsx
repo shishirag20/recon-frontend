@@ -112,11 +112,21 @@ export const ARRulesStudioTab: React.FC = () => {
     });
   };
 
-  const handleToggleEnableRule = (id: string) => {
+  const handleToggleEnableRule = async (id: string) => {
+    const target = rules.find((r) => r.id === id);
+    if (!target) return;
+
+    const updated = { ...target, enabled: !target.enabled };
     setRules((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, enabled: !r.enabled } : r))
+      prev.map((r) => (r.id === id ? updated : r))
     );
-    toast('Rule status updated', 'default');
+
+    try {
+      await arService.updateARRule('rec-ar-001', updated);
+      toast('Rule status updated', 'default');
+    } catch {
+      toast('Failed to update rule status on server', 'bad');
+    }
   };
 
   const handleMoveRuleUp = (id: string) => {
@@ -159,8 +169,13 @@ export const ARRulesStudioTab: React.FC = () => {
     toast(`Moved "${target.name}" down`, 'default');
   };
 
-  const handleUpdateRule = (updated: ARRule) => {
+  const handleUpdateRule = async (updated: ARRule) => {
     setRules((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+    try {
+      await arService.updateARRule('rec-ar-001', updated);
+    } catch {
+      // Best-effort
+    }
   };
 
   const handleAddRule = (phaseKey: string) => {
