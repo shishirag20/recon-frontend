@@ -14,8 +14,8 @@ export const API_ROUTES = {
   // Accounts Receivable (AR)
   AR: {
     RECONCILIATION: (id: string) => `/reconciliations/${id}`,
-    RULES: (id: string) => `/reconciliation/rules`,
-    RULE_BY_ID: (id: string, ruleId: string) => `/reconciliation/rules/${ruleId}`,
+    RULES: (id: string) => `/reconciliations/${id}/rules`,
+    RULE_BY_ID: (id: string, ruleId: string) => `/reconciliations/${id}/rules/${ruleId}`,
     INVOICES: `/ar/invoices`,
     BANK_STATEMENTS: `/ar/bank-statements`,
     CUSTOMERS: `/ar/customers`,

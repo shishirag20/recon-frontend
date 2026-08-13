@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import type { ARRule } from '../../types';
 import { getRuleDisplayFields } from './ARRuleCard';
+import { fieldMappingService } from '../../services/dataHub.service';
 
 interface ARRuleEditorProps {
   rule: ARRule;
@@ -14,6 +15,30 @@ export const ARRuleEditor: React.FC<ARRuleEditorProps> = ({
   onUpdateRule,
 }) => {
   const { bankField, secondSource, secondField } = getRuleDisplayFields(rule);
+  const [bankFieldOptions, setBankFieldOptions] = useState<string[]>([]);
+  const [targetFieldOptions, setTargetFieldOptions] = useState<string[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadFields = async () => {
+      try {
+        const [bankFields, invoiceFields] = await Promise.all([
+          fieldMappingService.canonicalFields('BANK'),
+          fieldMappingService.canonicalFields('INVOICE'),
+        ]);
+        if (!cancelled) {
+          setBankFieldOptions(bankFields);
+          setTargetFieldOptions(invoiceFields);
+        }
+      } catch {
+        // Fallback gracefully to existing options
+      }
+    };
+    loadFields();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleChangeName = (e: React.ChangeEvent<HTMLInputElement>) => {
     onUpdateRule({ ...rule, name: e.target.value });
@@ -68,9 +93,6 @@ export const ARRuleEditor: React.FC<ARRuleEditorProps> = ({
           COMPARES
         </label>
         {rule.kind === 'dup-utr' ? (
-          // dup-utr compares a bank row's own reference against every other
-          // reference in the same run/batch - there's no second table/field
-          // to pick from a dropdown for, unlike every other rule here.
           <div className="text-[11.5px] text-slate-600 font-mono bg-slate-200/60 px-2.5 py-1.5 rounded-md inline-block">
             Bank reference number (UTR) ↔ every other bank reference number in this run
           </div>
@@ -90,10 +112,13 @@ export const ARRuleEditor: React.FC<ARRuleEditorProps> = ({
               className="bg-white border border-slate-200 rounded-lg px-3 h-9 font-medium text-[11.5px] text-slate-800 focus:outline-none focus:border-indigo-600 shadow-2xs"
             >
               <option value={bankField}>Bank {bankField}</option>
-              <option value="narration">Bank narration</option>
-              <option value="payer_account_number">Bank payer account number</option>
-              <option value="bank_reference_number">Bank reference number</option>
-              <option value="amount">Bank amount</option>
+              {bankFieldOptions
+                .filter((f) => f !== bankField)
+                .map((f) => (
+                  <option key={f} value={f}>
+                    Bank {f}
+                  </option>
+                ))}
             </select>
 
             <span className="text-slate-400 font-bold text-xs px-0.5">↔</span>
@@ -123,11 +148,13 @@ export const ARRuleEditor: React.FC<ARRuleEditorProps> = ({
               className="bg-white border border-slate-200 rounded-lg px-3 h-9 font-mono text-[11.5px] text-slate-800 focus:outline-none focus:border-indigo-600 shadow-2xs"
             >
               <option value={secondField}>{secondField}</option>
-              <option value="invoice_number">invoice_number</option>
-              <option value="customer_code">customer_code</option>
-              <option value="bank_account_no">bank_account_no</option>
-              <option value="company_name">company_name</option>
-              <option value="utr_number">utr_number</option>
+              {targetFieldOptions
+                .filter((f) => f !== secondField)
+                .map((f) => (
+                  <option key={f} value={f}>
+                    {f}
+                  </option>
+                ))}
             </select>
           </div>
         )}

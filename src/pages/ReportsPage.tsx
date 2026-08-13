@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Topbar } from '../components/layout/Topbar';
 import { TabBar } from '../components/layout/TabBar';
 import { Button } from '../components/ui/Button';

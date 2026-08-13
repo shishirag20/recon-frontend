@@ -24,7 +24,7 @@ export const STATUS_STYLES: Record<DisplayJobStatus, string> = {
 export const STATUS_LABEL: Record<DisplayJobStatus, string> = {
   PROMOTED: 'Promoted',
   PROMOTING: 'Promoting...',
-  SUCCESS: 'Staged',
+  SUCCESS: 'Success',
   PARTIAL: 'Partial',
   FAILED: 'Failed',
   RUNNING: 'Running',

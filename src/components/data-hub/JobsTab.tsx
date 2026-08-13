@@ -1,10 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { KpiCard } from '../ui/KpiCard';
-import { Button } from '../ui/Button';
 import {
   Landmark,
   UploadCloud,
-  RefreshCw,
   FileSpreadsheet,
   CheckCircle2,
   XCircle,
@@ -20,27 +18,24 @@ import {
   CATEGORY_ICONS,
   CATEGORY_DESCRIPTIONS,
   CATEGORY_COLORS,
-  STATUS_STYLES,
-  STATUS_LABEL,
 } from '../../constants/datahub';
 
 interface JobsTabProps {
   jobs: IngestionJobOut[];
   onViewJob: (jobId: string) => void;
   onJobComplete: (job: IngestionJobOut) => void;
-  onRetry: (jobId: string) => void;
+  onRetry?: (jobId: string) => void;
 }
 
 export const JobsTab: React.FC<JobsTabProps> = ({
   jobs,
   onViewJob,
   onJobComplete,
-  onRetry,
+  onRetry: _onRetry,
 }) => {
   const [dataSources, setDataSources] = useState<DataSourceOut[]>([]);
   const [activeUploadingSourceId, setActiveUploadingSourceId] = useState<string | null>(null);
   const [activeUploadingStream, setActiveUploadingStream] = useState<string>('BANK');
-  const [actioningJobId, setActioningJobId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollTimersRef = useRef<Record<string, ReturnType<typeof setInterval>>>({});
 
@@ -148,14 +143,6 @@ export const JobsTab: React.FC<JobsTabProps> = ({
     onJobComplete(finalJob);
     setPendingUpload(null);
     setCreatedBatchJob(null);
-  };
-
-
-
-  const handleRetry = async (jobId: string) => {
-    setActioningJobId(jobId);
-    await onRetry(jobId);
-    setActioningJobId(null);
   };
 
   // Helper to find the latest job for a data source
@@ -307,8 +294,6 @@ export const JobsTab: React.FC<JobsTabProps> = ({
             </thead>
             <tbody className="divide-y divide-slate-100">
               {displayJobs.map((job) => {
-                const statusKey = job.status;
-
                 return (
                   <tr
                     key={job.job_id}

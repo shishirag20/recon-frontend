@@ -74,19 +74,33 @@ export const FieldMappingTransformModal: React.FC<FieldMappingTransformModalProp
         // see migration 0026). Every row here, not just the ones relevant to
         // this file - filtered down below once we know the file's headers.
         const [mappings, fields] = await Promise.all([
-          fieldMappingService.getActive(stream),
-          fieldMappingService.canonicalFields(stream),
+          fieldMappingService.getActive(stream, true),
+          fieldMappingService.canonicalFields(stream, true),
         ]);
         if (cancelled) return;
         setCanonicalFieldOptions(fields);
 
-        const toRows = (list: typeof mappings): MappingRow[] =>
-          list.map((m, idx) => ({
-            id: m.mapping_id || `map-${idx}`,
-            source_field: m.source_field,
-            canonical_field: m.canonical_field,
-            transform: m.transform || 'NONE',
-          }));
+        const validCanonicalSet = new Set(fields);
+
+        const toRows = (list: typeof mappings): MappingRow[] => {
+          const usedTargets = new Set<string>();
+          return list.map((m, idx) => {
+            let isTargetValid = !!(m.canonical_field && validCanonicalSet.has(m.canonical_field));
+            if (isTargetValid && m.transform !== 'CONST') {
+              if (usedTargets.has(m.canonical_field)) {
+                isTargetValid = false;
+              } else {
+                usedTargets.add(m.canonical_field);
+              }
+            }
+            return {
+              id: m.mapping_id || `map-${idx}`,
+              source_field: m.source_field,
+              canonical_field: isTargetValid ? m.canonical_field : '',
+              transform: isTargetValid ? (m.transform || 'NONE') : 'NONE',
+            };
+          });
+        };
 
         // Filter the full dictionary down to what's actually relevant to this
         // file: a row whose source_field appears (normalized) among the
@@ -105,7 +119,12 @@ export const FieldMappingTransformModal: React.FC<FieldMappingTransformModalProp
               mappings.filter(
                 (m) => m.transform === 'CONST' || normalizedHeaders.has(normalizeHeader(m.source_field))
               )
-            );
+            ).map((r) => {
+              if (r.canonical_field && !validCanonicalSet.has(r.canonical_field)) {
+                return { ...r, canonical_field: '', transform: 'NONE' as TransformType };
+              }
+              return r;
+            });
 
             // Enrichment: check this file's headers against the DB
             // dictionary and append only the ones genuinely not covered yet -
@@ -116,7 +135,7 @@ export const FieldMappingTransformModal: React.FC<FieldMappingTransformModalProp
               .map((r, idx) => ({
                 id: `new-${idx}-${r.source_field}`,
                 source_field: r.source_field,
-                canonical_field: fields[0] || '',
+                canonical_field: '',
                 transform: 'NONE' as TransformType,
                 isNew: true,
               }));
@@ -128,7 +147,15 @@ export const FieldMappingTransformModal: React.FC<FieldMappingTransformModalProp
         } catch {
           // fall through to the full active mapping below
         }
-        if (!cancelled) setRows(toRows(mappings));
+        if (!cancelled) {
+          const sanitizedFullRows = toRows(mappings).map((r) => {
+            if (r.canonical_field && !validCanonicalSet.has(r.canonical_field)) {
+              return { ...r, canonical_field: '', transform: 'NONE' as TransformType };
+            }
+            return r;
+          });
+          setRows(sanitizedFullRows);
+        }
       } catch {
         if (!cancelled) {
           setRows([]);
@@ -147,7 +174,7 @@ export const FieldMappingTransformModal: React.FC<FieldMappingTransformModalProp
     const newId = `map-${Date.now()}`;
     setRows((prev) => [
       ...prev,
-      { id: newId, source_field: 'new_column', canonical_field: canonicalFieldOptions[0] || '', transform: 'NONE' },
+      { id: newId, source_field: 'new_column', canonical_field: '', transform: 'NONE' },
     ]);
   };
 
@@ -162,15 +189,42 @@ export const FieldMappingTransformModal: React.FC<FieldMappingTransformModalProp
   };
 
   const handleAiAutoMap = () => {
-    setRows((prev) =>
-      prev.map((r) => {
+    setRows((prev) => {
+      const usedCanonical = new Set<string>();
+      return prev.map((r) => {
+        const normSource = r.source_field.toLowerCase().trim();
+        let target = '';
         let t: TransformType = 'NONE';
-        if (r.source_field.includes('date')) t = 'PARSE_DATE';
-        else if (r.source_field.includes('amount')) t = 'TO_MINOR_UNITS';
-        else if (r.source_field.includes('name') || r.source_field.includes('ref')) t = 'TRIM';
-        return { ...r, transform: t };
-      })
-    );
+
+        if (normSource.includes('date')) {
+          target = 'transaction_date';
+          t = 'PARSE_DATE';
+        } else if (normSource === 'amount' || normSource.includes('amount_minor')) {
+          target = 'amount_minor';
+          t = 'TO_MINOR_UNITS';
+        } else if (normSource.includes('ref') || normSource.includes('utr')) {
+          target = 'bank_reference';
+          t = 'TRIM';
+        } else if (normSource.includes('payer') || normSource.includes('account_no')) {
+          target = 'payer_account_no';
+          t = 'TRIM';
+        } else if (normSource.includes('charge')) {
+          target = 'is_bank_charge';
+          t = 'NONE';
+        }
+
+        // If target was already assigned to another column or unmatched, set to '-' ('')
+        if (target && usedCanonical.has(target)) {
+          target = '';
+          t = 'NONE';
+        }
+        if (target) {
+          usedCanonical.add(target);
+        }
+
+        return { ...r, canonical_field: target, transform: t };
+      });
+    });
   };
 
   const handleConfirm = async () => {
@@ -278,6 +332,7 @@ export const FieldMappingTransformModal: React.FC<FieldMappingTransformModalProp
                         onChange={(e) => handleRowChange(row.id, 'canonical_field', e.target.value)}
                         className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-900 font-semibold focus:outline-none focus:border-indigo-500"
                       >
+                        <option value="">-</option>
                         {canonicalFieldOptions.map((f) => (
                           <option key={f} value={f}>{f}</option>
                         ))}
