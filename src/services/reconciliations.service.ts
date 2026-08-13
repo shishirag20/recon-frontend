@@ -70,11 +70,12 @@ export const reconciliationsService = {
   /**
    * Trigger rule engine execution for a reconciliation
    */
-  async startRun(id: string, periodStart: string, periodEnd: string): Promise<any> {
+  async startRun(id: string, periodStart: string, periodEnd: string, lookbackDate?: string): Promise<any> {
     const validId = await resolveARDefinitionId(id);
     return api.post(API_ROUTES.RECONCILIATIONS.RUNS(validId), {
       period_start: periodStart,
       period_end: periodEnd,
+      ...(lookbackDate ? { lookback_date: lookbackDate } : {}),
     });
   },
 

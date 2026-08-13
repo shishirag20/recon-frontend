@@ -21,6 +21,12 @@ type ModalPhase =
 
 const TERMINAL_STATUSES = new Set(['COMPUTED', 'FAILED']);
 
+const getDefaultLookbackDate = () => {
+  const d = new Date();
+  d.setMonth(d.getMonth() - 6);
+  return d.toISOString().split('T')[0];
+};
+
 export const RunReconciliationModal: React.FC<RunReconciliationModalProps> = ({
   isOpen,
   onClose,
@@ -30,6 +36,7 @@ export const RunReconciliationModal: React.FC<RunReconciliationModalProps> = ({
   const [phase, setPhase] = useState<ModalPhase>({ type: 'INPUT_DATES' });
   const [periodStart, setPeriodStart] = useState<string>('');
   const [periodEnd, setPeriodEnd] = useState<string>('');
+  const [lookbackDate, setLookbackDate] = useState<string>(getDefaultLookbackDate);
   const [pollCount, setPollCount] = useState(0);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -44,6 +51,7 @@ export const RunReconciliationModal: React.FC<RunReconciliationModalProps> = ({
     setPhase({ type: 'INPUT_DATES' });
     setPeriodStart('');
     setPeriodEnd('');
+    setLookbackDate(getDefaultLookbackDate());
     setPollCount(0);
   }, []);
 
@@ -98,7 +106,12 @@ export const RunReconciliationModal: React.FC<RunReconciliationModalProps> = ({
     if (!periodStart || !periodEnd) return;
     setPhase({ type: 'STARTING' });
     try {
-      const run = await reconciliationsService.startRun(definitionId, periodStart, periodEnd);
+      const run = await reconciliationsService.startRun(
+        definitionId,
+        periodStart,
+        periodEnd,
+        lookbackDate
+      );
       // Run returns 202 QUEUED with run_id
       startPolling(run.id || run.run_id, run);
     } catch (e: any) {
@@ -121,12 +134,12 @@ export const RunReconciliationModal: React.FC<RunReconciliationModalProps> = ({
       phase.type === 'INPUT_DATES'
         ? 'Run Reconciliation'
         : phase.type === 'STARTING'
-        ? 'Starting Run…'
-        : phase.type === 'POLLING'
-        ? 'Computing Matches'
-        : phase.type === 'COMPUTED'
-        ? 'Computation Complete'
-        : 'Run Failed';
+          ? 'Starting Run…'
+          : phase.type === 'POLLING'
+            ? 'Computing Matches'
+            : phase.type === 'COMPUTED'
+              ? 'Computation Complete'
+              : 'Run Failed';
 
     return (
       <div className="flex items-center justify-between border-b border-slate-100 pb-4">
@@ -150,8 +163,10 @@ export const RunReconciliationModal: React.FC<RunReconciliationModalProps> = ({
       return (
         <div className="flex flex-col gap-4 my-2">
           <p className="text-sm text-slate-500">
-            Select the date range for the reconciliation run.
+            Select the date range for the reconciliation run. The bank transaction records within the specified date ranges will be considered for the reconciliation run.
           </p>
+
+          {/* Period Date Range */}
           <div className="flex gap-4 items-end">
             <div className="flex-1 flex flex-col gap-1.5">
               <label className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider">
@@ -185,6 +200,31 @@ export const RunReconciliationModal: React.FC<RunReconciliationModalProps> = ({
               </div>
             </div>
           </div>
+
+          {/* Lookback Invoices Date */}
+          <div className="flex flex-col gap-1.5 pt-2 border-t border-slate-100">
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider">
+                Lookback Invoices Date
+              </label>
+              <span className="text-[11px] text-slate-400 font-normal">
+                Defaults to 6 months prior
+              </span>
+            </div>
+            <div className="relative">
+              <Calendar className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+              <input
+                type="date"
+                value={lookbackDate}
+                onChange={(e) => setLookbackDate(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
+            <p className="text-[11px] text-slate-400 leading-normal">
+              Invoices created on or after this date will be considered for matching against period payments.
+            </p>
+          </div>
+
           <div className="flex justify-end mt-4">
             <Button
               variant="primary"

@@ -3,22 +3,17 @@ import { useNavigate } from 'react-router-dom';
 import { Topbar } from '../components/layout/Topbar';
 import { TabBar } from '../components/layout/TabBar';
 import { Button } from '../components/ui/Button';
-import { ChevronLeft, Play, CheckCircle2 } from 'lucide-react';
+import { ChevronLeft } from 'lucide-react';
 import { ARMatchedTab } from '../components/ar/ARMatchedTab';
 import { ARRulesStudioTab } from '../components/ar/ARRulesStudioTab';
 import { ARExceptionsTab } from '../components/ar/ARExceptionsTab';
-import { useToast } from '../hooks/useToast';
 import { arService } from '../services/ar.service';
 import type { AREngineResult } from '../types';
-import { RunReconciliationModal } from '../components/reconciliation/RunReconciliationModal';
 
 export const ARWorkspacePage: React.FC = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<string>('matches');
-  const [isFinished, setIsFinished] = useState<boolean>(false);
   const [arData, setArData] = useState<AREngineResult | null>(null);
-  const [isRunModalOpen, setIsRunModalOpen] = useState<boolean>(false);
-  const { toast } = useToast();
 
   useEffect(() => {
     let cancelled = false;
@@ -36,31 +31,6 @@ export const ARWorkspacePage: React.FC = () => {
     return () => { cancelled = true; };
   }, []);
 
-  const handleRunReconciliation = () => {
-    setIsRunModalOpen(true);
-  };
-
-  const handleRunComplete = async (runResult: any) => {
-    // Optionally fetch AR data again to refresh matches/exceptions
-    try {
-      const result = await arService.getARReconciliation('rec-ar-001');
-      setArData(result);
-    } catch {
-      // Fallback
-    }
-  };
-
-  const handleFinishReconciliation = async () => {
-    try {
-      await arService.finishReconciliation('rec-ar-001', 'Alex Rivera');
-      setIsFinished(true);
-      toast('Reconciliation signed off and marked as Finished.', 'ok');
-    } catch {
-      setIsFinished(true);
-      toast('Reconciliation signed off.', 'ok');
-    }
-  };
-
   const matchesCount = arData ? (arData.matches || []).length : 0;
   const exceptionsCount = arData ? (arData.exceptions || []).filter((e) => e.status === 'Open').length : 0;
 
@@ -75,7 +45,7 @@ export const ARWorkspacePage: React.FC = () => {
       {/* Top Header */}
       <Topbar
         title="Accounts Receivable (AR) Reconciliation"
-        subtitle={`July 2026 · Alex Rivera ${isFinished ? '· Signed off' : ''}`}
+        subtitle="July 2026 · Alex Rivera"
         actions={
           <div className="flex items-center gap-2">
             <Button
@@ -86,31 +56,6 @@ export const ARWorkspacePage: React.FC = () => {
             >
               Category View
             </Button>
-
-            {isFinished ? (
-              <span className="px-3 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200 flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                Reconciliation finished
-              </span>
-            ) : (
-              <>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleFinishReconciliation}
-                  className="border border-slate-200"
-                >
-                  Finish reconciliation
-                </Button>
-                <Button
-                  variant="primary"
-                  icon={Play}
-                  onClick={handleRunReconciliation}
-                >
-                  Run reconciliation
-                </Button>
-              </>
-            )}
           </div>
         }
       />
@@ -132,13 +77,6 @@ export const ARWorkspacePage: React.FC = () => {
 
         {activeTab === 'exceptions' && <ARExceptionsTab />}
       </div>
-
-      <RunReconciliationModal
-        isOpen={isRunModalOpen}
-        onClose={() => setIsRunModalOpen(false)}
-        definitionId="rec-ar-001"
-        onRunComplete={handleRunComplete}
-      />
     </div>
   );
 };

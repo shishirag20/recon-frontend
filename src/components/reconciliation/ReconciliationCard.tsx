@@ -7,9 +7,10 @@ import { Play } from 'lucide-react';
 
 interface ReconciliationCardProps {
   job: Reconciliation;
+  onRun?: (job: Reconciliation) => void;
 }
 
-export const ReconciliationCard: React.FC<ReconciliationCardProps> = ({ job }) => {
+export const ReconciliationCard: React.FC<ReconciliationCardProps> = ({ job, onRun }) => {
   const navigate = useNavigate();
 
   const handleOpenWorkspace = () => {
@@ -133,11 +134,15 @@ export const ReconciliationCard: React.FC<ReconciliationCardProps> = ({ job }) =
           icon={Play}
           onClick={(e) => {
             e.stopPropagation();
-            handleOpenWorkspace();
+            if (onRun) {
+              onRun(job);
+            } else {
+              handleOpenWorkspace();
+            }
           }}
-          className="text-slate-500 hover:text-slate-900"
+          className="text-slate-600 hover:text-indigo-600 font-semibold"
         >
-          Run
+          Run reconciliation
         </Button>
       </div>
     </div>
