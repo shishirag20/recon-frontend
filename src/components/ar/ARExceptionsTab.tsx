@@ -1,109 +1,187 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { reconciliationsService } from '../../services/reconciliations.service';
 import { arService } from '../../services/ar.service';
 import { Button } from '../ui/Button';
-import { Search, Check, X, AlertCircle } from 'lucide-react';
+import { Search, Check, X } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
-import type { ARExceptionType, AREngineResult } from '../../types';
+import { RULE_METADATA } from './ARRuleCard';
+import type { ExceptionOut, MatchGroupOut, ARRule } from '../../types';
 
-export interface ARExceptionItem {
-  id: string;
-  key: string;
-  type: ARExceptionType | string;
-  relatedId: string;
-  description: string;
-  amount: number;
-  status: 'Open' | 'Resolved' | 'Auto-resolved' | 'Deferred';
-  date: string;
-  customer?: string;
-  confidence?: number;
-  suggestedInvoiceId?: string;
-  suggestedCustomerId?: string;
-  ambiguousInvoiceIds?: string[];
+interface ARExceptionsTabProps {
+  exceptions: ExceptionOut[];
+  /** Same run's match groups - looked up by match_group_id so the resolution
+   * panel can show which match (and which rules) this exception is tied to,
+   * for the exception types that reference one (DOUBLE_COLLISION,
+   * MULTIPLE_INVOICE_MATCH). */
+  matches?: MatchGroupOut[];
+  loading?: boolean;
+  /** Called after a successful resolve so the parent can refetch. */
+  onResolved: () => void;
 }
 
-export const ARExceptionsTab: React.FC = () => {
+// exception_type -> display label + badge color. Every value here is a
+// real constants.EXCEPTION_TYPES entry the backend can actually raise
+// today (see docs/reconciliation.md §8 / the invoice-flow-example doc's
+// reference table) - not a superset of hypothetical future types.
+const TYPE_META: Record<string, { label: string; badgeClass: string }> = {
+  SHORT_PAY: { label: 'Short-Pay', badgeClass: 'bg-rose-50 text-rose-700 border-rose-200' },
+  SUSPENSE: { label: 'Suspense', badgeClass: 'bg-amber-50 text-amber-700 border-amber-200' },
+  DOUBLE_COLLISION: { label: 'Double Collision', badgeClass: 'bg-rose-50 text-rose-700 border-rose-200' },
+  MULTIPLE_INVOICE_MATCH: { label: 'Multiple Invoice Match', badgeClass: 'bg-amber-50 text-amber-700 border-amber-200' },
+  UNAPPLIED_CASH: { label: 'Unapplied Cash', badgeClass: 'bg-amber-50 text-amber-700 border-amber-200' },
+  NO_PAYMENT: { label: 'No Payment Received', badgeClass: 'bg-rose-50 text-rose-700 border-rose-200' },
+  GL_VARIANCE: { label: 'GL Variance', badgeClass: 'bg-rose-50 text-rose-700 border-rose-200' },
+  DUPLICATE: { label: 'Duplicate', badgeClass: 'bg-slate-100 text-slate-700 border-slate-200' },
+};
+
+const rupees = (minor: number | null | undefined) =>
+  minor == null ? '—' : `₹${(Math.abs(minor) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+
+const shortId = (id: string | null | undefined) => (id ? `${id.slice(0, 8)}…` : '—');
+
+/** Best-effort amount for display - discrepancy_minor isn't populated by
+ * the engine today, so this is derived from whichever `detail` field the
+ * exception type actually carries (see the dao.insert_exception call
+ * sites in app/reconciliation/engine.py / gl_posting.py). */
+interface KnownExceptionDetail {
+  shortfall_minor?: number;
+  tolerance_minor?: number;
+  variance_minor?: number;
+}
+const exceptionDetail = (e: ExceptionOut): KnownExceptionDetail => (e.detail || {}) as KnownExceptionDetail;
+
+function exceptionAmountMinor(e: ExceptionOut): number | null {
+  if (e.discrepancy_minor != null) return e.discrepancy_minor;
+  const detail = exceptionDetail(e);
+  if (e.exception_type === 'SHORT_PAY') return detail.shortfall_minor ?? null;
+  if (e.exception_type === 'GL_VARIANCE') return detail.variance_minor ?? null;
+  return null;
+}
+
+type Disposition = 'writeoff' | 'keepopen' | 'dispute';
+const DISPOSITION_TO_UPDATE: Record<Disposition, { status: string; resolution_outcome: string }> = {
+  writeoff: { status: 'WRITTEN_OFF', resolution_outcome: 'WRITEOFF' },
+  keepopen: { status: 'INVESTIGATING', resolution_outcome: 'KEEPOPEN' },
+  dispute: { status: 'INVESTIGATING', resolution_outcome: 'DISPUTE' },
+};
+
+export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ exceptions, matches = [], loading, onResolved }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedType, setSelectedType] = useState<string>('all');
-  const [sortOption, setSortOption] = useState<string>('amount-desc');
-  const [activeExceptionKey, setActiveExceptionKey] = useState<string | null>('Short-Pay:INV-2026-003');
-  const [shortPayDisposition, setShortPayDisposition] = useState<'writeoff' | 'keepopen' | 'dispute'>('writeoff');
+  const [sortOption, setSortOption] = useState<'amount-desc' | 'amount-asc' | 'date-desc'>('date-desc');
+  const [activeExceptionId, setActiveExceptionId] = useState<string | null>(null);
+  const [disposition, setDisposition] = useState<Disposition>('writeoff');
   const [resolutionNote, setResolutionNote] = useState('');
-  const [arResult, setArResult] = useState<AREngineResult | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [rulesById, setRulesById] = useState<Record<string, ARRule>>({});
   const { toast } = useToast();
 
-  React.useEffect(() => {
+  // Same rule-name resolution ARMatchedTab uses for "Resolved Via" - kept
+  // here too so the "linked match" section below can show real rule names,
+  // not raw rule_id UUIDs.
+  useEffect(() => {
     let cancelled = false;
-    arService.getARReconciliation().then((res) => {
-      if (!cancelled) setArResult(res);
-    }).catch(() => {});
+    arService.getARRules().then((rules) => {
+      if (cancelled) return;
+      const byId: Record<string, ARRule> = {};
+      rules.forEach((r) => { byId[r.id] = r; });
+      setRulesById(byId);
+    }).catch(() => { });
     return () => { cancelled = true; };
   }, []);
 
-  const [exceptions, setExceptions] = useState<ARExceptionItem[]>([]);
+  const shortIdRule = (id: string) => `${id.slice(0, 8)}…`;
+  const ruleLabel = (ruleId: string | null): string => {
+    if (!ruleId) return 'No rule (fallback)';
+    const rule = rulesById[ruleId];
+    if (!rule) return shortIdRule(ruleId);
+    return RULE_METADATA[rule.kind]?.label || rule.name || rule.kind;
+  };
 
-  React.useEffect(() => {
-    if (arResult?.exceptions) {
-      setExceptions(arResult.exceptions);
-    }
-  }, [arResult]);
+  const matchesByGroupId = useMemo(() => {
+    const map: Record<string, MatchGroupOut> = {};
+    matches.forEach((m) => { map[m.match_group_id] = m; });
+    return map;
+  }, [matches]);
 
   const filteredExceptions = useMemo(() => {
-    let rows = exceptions.filter((e) => {
-      if (selectedType !== 'all' && e.type !== selectedType) return false;
+    const rows = exceptions.filter((e) => {
+      if (selectedType !== 'all' && e.exception_type !== selectedType) return false;
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
         return (
-          e.description.toLowerCase().includes(q) ||
-          (e.customer && e.customer.toLowerCase().includes(q)) ||
-          e.id.toLowerCase().includes(q)
+          (e.reason_code || '').toLowerCase().includes(q) ||
+          (e.customer_id || '').toLowerCase().includes(q) ||
+          e.exception_id.toLowerCase().includes(q)
         );
       }
       return true;
     });
 
-    const [key, dir] = sortOption.split('-');
-    return rows.sort((a, b) => {
-      let av: any = a[key as keyof ARExceptionItem] || '';
-      let bv: any = b[key as keyof ARExceptionItem] || '';
-      if (key === 'amount' || key === 'confidence') {
-        av = Number(av);
-        bv = Number(bv);
-      }
-      if (av < bv) return dir === 'asc' ? -1 : 1;
-      if (av > bv) return dir === 'asc' ? 1 : -1;
-      return 0;
+    return [...rows].sort((a, b) => {
+      if (sortOption === 'date-desc') return b.created_at.localeCompare(a.created_at);
+      const av = exceptionAmountMinor(a) ?? 0;
+      const bv = exceptionAmountMinor(b) ?? 0;
+      return sortOption === 'amount-desc' ? bv - av : av - bv;
     });
   }, [exceptions, searchQuery, selectedType, sortOption]);
 
-  const activeException = useMemo(() => {
-    return exceptions.find((e) => e.key === activeExceptionKey);
-  }, [exceptions, activeExceptionKey]);
+  const activeException = useMemo(
+    () => exceptions.find((e) => e.exception_id === activeExceptionId) || null,
+    [exceptions, activeExceptionId]
+  );
 
-  const handleResolveActive = (status: 'Resolved' | 'Auto-resolved' | 'Deferred') => {
-    if (!activeExceptionKey) return;
-    setExceptions((prev) =>
-      prev.map((e) => (e.key === activeExceptionKey ? { ...e, status } : e))
-    );
-    toast(`Exception ${activeExceptionKey.split(':')[0]} marked as ${status}`, 'ok');
-    setActiveExceptionKey(null);
+  const handleResolveShortPay = async () => {
+    if (!activeException) return;
+    setSaving(true);
+    try {
+      const { status, resolution_outcome } = DISPOSITION_TO_UPDATE[disposition];
+      await reconciliationsService.updateException(activeException.exception_id, {
+        status,
+        resolution_outcome,
+        resolution_notes: resolutionNote || undefined,
+      });
+      toast(`Exception ${activeException.exception_no || shortId(activeException.exception_id)} → ${status}`, 'ok');
+      setActiveExceptionId(null);
+      setResolutionNote('');
+      onResolved();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Failed to resolve exception', 'bad');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleMarkResolved = async () => {
+    if (!activeException) return;
+    setSaving(true);
+    try {
+      await reconciliationsService.updateException(activeException.exception_id, {
+        status: 'RESOLVED',
+        resolution_notes: resolutionNote || undefined,
+      });
+      toast(`Exception ${activeException.exception_no || shortId(activeException.exception_id)} marked Resolved`, 'ok');
+      setActiveExceptionId(null);
+      setResolutionNote('');
+      onResolved();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Failed to resolve exception', 'bad');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const renderBadge = (type: string) => {
-    let badgeClass = 'bg-slate-100 text-slate-700 border-slate-200';
-    if (type === 'Short-Pay' || type === 'Double Collision' || type === 'No Payment Received') {
-      badgeClass = 'bg-rose-50 text-rose-700 border-rose-200';
-    } else if (type === 'Suspense' || type === 'Multiple Invoice Match') {
-      badgeClass = 'bg-amber-50 text-amber-700 border-amber-200';
-    } else if (type === 'Standalone Bank Charge') {
-      badgeClass = 'bg-slate-100 text-slate-700 border-slate-200';
-    }
-
+    const meta = TYPE_META[type] || { label: type, badgeClass: 'bg-slate-100 text-slate-700 border-slate-200' };
     return (
-      <span className={`px-2.5 py-0.5 rounded-md text-[11px] font-semibold border ${badgeClass}`}>
-        {type}
+      <span className={`px-2.5 py-0.5 rounded-md text-[11px] font-semibold border ${meta.badgeClass}`}>
+        {meta.label}
       </span>
     );
   };
+
+  const isResolvedStatus = (status: string) =>
+    status === 'RESOLVED' || status === 'AUTO_RESOLVED' || status === 'WRITTEN_OFF' || status === 'ADJUSTED' || status === 'CARRIED_FORWARD';
 
   return (
     <div className="p-6 space-y-5 fade-in w-full">
@@ -126,22 +204,19 @@ export const ARExceptionsTab: React.FC = () => {
           className="h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-900 focus:outline-none focus:border-indigo-600 shadow-xs min-w-47.5"
         >
           <option value="all">All Exception Types ({exceptions.length})</option>
-          <option value="Short-Pay">Short-Pay</option>
-          <option value="Suspense">Suspense (Unidentified)</option>
-          <option value="Double Collision">Double Collision</option>
-          <option value="No Payment Received">No Payment Received</option>
-          <option value="Standalone Bank Charge">Standalone Bank Charge</option>
+          {Object.entries(TYPE_META).map(([type, meta]) => (
+            <option key={type} value={type}>{meta.label}</option>
+          ))}
         </select>
 
         <select
           value={sortOption}
-          onChange={(e) => setSortOption(e.target.value)}
+          onChange={(e) => setSortOption(e.target.value as typeof sortOption)}
           className="h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-900 focus:outline-none focus:border-indigo-600 shadow-xs min-w-45"
         >
           <option value="amount-desc">Amount: high → low</option>
           <option value="amount-asc">Amount: low → high</option>
           <option value="date-desc">Date: newest first</option>
-          <option value="confidence-desc">Confidence: high → low</option>
         </select>
       </div>
 
@@ -154,12 +229,17 @@ export const ARExceptionsTab: React.FC = () => {
           <span className="text-[11.5px] text-slate-500 font-medium">
             {filteredExceptions.length} shown ·{' '}
             <span className="text-rose-600 font-semibold">
-              {exceptions.filter((e) => e.status === 'Open').length} open
+              {exceptions.filter((e) => e.status === 'OPEN').length} open
             </span>{' '}
             · click a row to resolve
           </span>
         </div>
 
+        {loading ? (
+          <div className="p-10 text-center text-xs text-slate-500">Loading exceptions…</div>
+        ) : filteredExceptions.length === 0 ? (
+          <div className="p-10 text-center text-xs text-slate-500">No exceptions match the current filter.</div>
+        ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
             <thead>
@@ -167,41 +247,37 @@ export const ARExceptionsTab: React.FC = () => {
                 <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Customer</th>
                 <th className="px-4 py-3">Description</th>
-                <th className="px-4 py-3">Date</th>
-                <th className="px-4 py-3 text-right">Confidence</th>
+                <th className="px-4 py-3">Created</th>
                 <th className="px-4 py-3 text-right">Amount</th>
                 <th className="px-4 py-3 text-right">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredExceptions.map((e) => {
-                const isSelected = activeExceptionKey === e.key;
+                const isSelected = activeExceptionId === e.exception_id;
                 return (
                   <tr
-                    key={e.key}
-                    onClick={() => setActiveExceptionKey(e.key)}
+                    key={e.exception_id}
+                    onClick={() => setActiveExceptionId(e.exception_id)}
                     className={`cursor-pointer transition-colors ${isSelected ? 'bg-indigo-50/60 font-medium' : 'hover:bg-slate-50/80'
                       }`}
                   >
-                    <td className="px-4 py-4 align-middle">{renderBadge(e.type)}</td>
-                    <td className="px-4 py-4 align-middle font-bold text-slate-900">
-                      {e.customer || '—'}
+                    <td className="px-4 py-4 align-middle">{renderBadge(e.exception_type)}</td>
+                    <td className="px-4 py-4 align-middle font-mono text-[11.5px] text-slate-700" title={e.customer_id ?? undefined}>
+                      {shortId(e.customer_id)}
                     </td>
                     <td className="px-4 py-4 align-middle text-slate-600 font-normal leading-snug">
-                      {e.description}
+                      {e.reason_code || '—'}
                     </td>
                     <td className="px-4 py-4 align-middle text-slate-500 font-mono text-[11.5px]">
-                      {e.date}
-                    </td>
-                    <td className="px-4 py-4 align-middle text-right font-mono text-slate-700">
-                      {e.confidence}%
+                      {new Date(e.created_at).toLocaleDateString('en-IN')}
                     </td>
                     <td className="px-4 py-4 align-middle text-right font-mono font-bold text-rose-700">
-                      ₹{e.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      {rupees(exceptionAmountMinor(e))}
                     </td>
                     <td className="px-4 py-4 align-middle text-right">
                       <span
-                        className={`px-2.5 py-1 rounded-full text-[11px] font-semibold ${e.status === 'Resolved' || e.status === 'Auto-resolved'
+                        className={`px-2.5 py-1 rounded-full text-[11px] font-semibold ${isResolvedStatus(e.status)
                           ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                           : 'bg-rose-50 text-rose-700 border border-rose-200'
                           }`}
@@ -215,6 +291,7 @@ export const ARExceptionsTab: React.FC = () => {
             </tbody>
           </table>
         </div>
+        )}
       </div>
 
       {/* Active Resolution Panel */}
@@ -224,16 +301,16 @@ export const ARExceptionsTab: React.FC = () => {
           <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between gap-4">
             <div>
               <div className="text-xs font-bold text-slate-900 flex items-center gap-2">
-                <span>Resolve Exception — {activeException.type}</span>
-                {renderBadge(activeException.type)}
+                <span>Resolve Exception — {activeException.exception_no || shortId(activeException.exception_id)}</span>
+                {renderBadge(activeException.exception_type)}
               </div>
               <p className="text-[11.5px] text-slate-500 mt-0.5">
-                {activeException.description}
+                {activeException.reason_code}
               </p>
             </div>
 
             <button
-              onClick={() => setActiveExceptionKey(null)}
+              onClick={() => setActiveExceptionId(null)}
               className="text-slate-400 hover:text-slate-700 p-1 rounded-md"
             >
               <X className="w-4 h-4" />
@@ -242,30 +319,50 @@ export const ARExceptionsTab: React.FC = () => {
 
           {/* Panel Body Per Exception Type */}
           <div className="p-5 space-y-4">
-            {/* Panel 1: Short-Pay */}
-            {activeException.type === 'Short-Pay' && (
+            {/* Linked Match - only exceptions tied to a match_group_id (DOUBLE_COLLISION,
+                MULTIPLE_INVOICE_MATCH) have one; shows the same match type + resolved-via
+                rules the Matched tab shows, real data from the same GET /runs/{id}/matches. */}
+            {activeException.match_group_id && matchesByGroupId[activeException.match_group_id] && (
+              <div className="p-3.5 bg-indigo-50/50 border border-indigo-200 rounded-lg">
+                <div className="text-[10.5px] font-bold text-indigo-700 uppercase mb-1.5">Linked Match</div>
+                <span className="inline-block px-2 py-0.5 rounded-md text-[10.5px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 mb-1.5">
+                  {matchesByGroupId[activeException.match_group_id].match_type}
+                </span>
+                {matchesByGroupId[activeException.match_group_id].locked_by_rule_id && (
+                  <div className="text-[12.5px] text-slate-800">
+                    <span className="font-semibold text-slate-900">
+                      {ruleLabel(matchesByGroupId[activeException.match_group_id].locked_by_rule_id)}
+                    </span>
+                    <span className="text-slate-400"> · customer lock</span>
+                  </div>
+                )}
+                <div className="text-[12.5px] text-slate-800">
+                  <span className="font-semibold text-slate-900">
+                    {ruleLabel(matchesByGroupId[activeException.match_group_id].rule_id)}
+                  </span>
+                  {matchesByGroupId[activeException.match_group_id].reason && (
+                    <div className="text-[11.5px] text-slate-500 font-normal mt-0.5">
+                      {matchesByGroupId[activeException.match_group_id].reason}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Panel: Short-Pay - real shortfall/tolerance from detail, real disposition -> resolution_outcome mapping */}
+            {activeException.exception_type === 'SHORT_PAY' && (
               <div className="space-y-4">
-                <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 grid grid-cols-3 gap-4 text-center">
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 grid grid-cols-2 gap-4 text-center">
                   <div>
-                    <div className="text-[10.5px] font-bold text-slate-400 uppercase">
-                      Invoice Total
-                    </div>
-                    <div className="text-sm font-bold text-slate-900 mt-1">
-                      ₹{(activeException.amount + 500000).toLocaleString('en-IN')}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[10.5px] font-bold text-slate-400 uppercase">
-                      Payment Received
-                    </div>
-                    <div className="text-sm font-bold text-slate-900 mt-1">₹5,000,000.00</div>
-                  </div>
-                  <div>
-                    <div className="text-[10.5px] font-bold text-rose-600 uppercase">
-                      Shortage Amount
-                    </div>
+                    <div className="text-[10.5px] font-bold text-rose-600 uppercase">Shortfall</div>
                     <div className="text-sm font-bold text-rose-700 mt-1">
-                      ₹{activeException.amount.toLocaleString('en-IN')}
+                      {rupees(exceptionDetail(activeException).shortfall_minor)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10.5px] font-bold text-slate-400 uppercase">Tolerance</div>
+                    <div className="text-sm font-bold text-slate-900 mt-1">
+                      {rupees(exceptionDetail(activeException).tolerance_minor)}
                     </div>
                   </div>
                 </div>
@@ -279,17 +376,13 @@ export const ARExceptionsTab: React.FC = () => {
                       <input
                         type="radio"
                         name="shortpay-action"
-                        checked={shortPayDisposition === 'writeoff'}
-                        onChange={() => setShortPayDisposition('writeoff')}
+                        checked={disposition === 'writeoff'}
+                        onChange={() => setDisposition('writeoff')}
                         className="text-indigo-600 focus:ring-indigo-500"
                       />
                       <div>
-                        <div className="text-xs font-bold text-slate-900">
-                          Write off shortage as small balance variance / TDS deduction
-                        </div>
-                        <div className="text-[11px] text-slate-500">
-                          Applies ₹500,000.00 to TDS adjustment expense account 6120.
-                        </div>
+                        <div className="text-xs font-bold text-slate-900">Write off the shortfall</div>
+                        <div className="text-[11px] text-slate-500">status → WRITTEN_OFF, resolution_outcome → WRITEOFF</div>
                       </div>
                     </label>
 
@@ -297,17 +390,27 @@ export const ARExceptionsTab: React.FC = () => {
                       <input
                         type="radio"
                         name="shortpay-action"
-                        checked={shortPayDisposition === 'keepopen'}
-                        onChange={() => setShortPayDisposition('keepopen')}
+                        checked={disposition === 'keepopen'}
+                        onChange={() => setDisposition('keepopen')}
                         className="text-indigo-600 focus:ring-indigo-500"
                       />
                       <div>
-                        <div className="text-xs font-bold text-slate-900">
-                          Keep invoice open for balance follow-up
-                        </div>
-                        <div className="text-[11px] text-slate-500">
-                          Leaves ₹500,000.00 effective balance open on customer account.
-                        </div>
+                        <div className="text-xs font-bold text-slate-900">Keep invoice open for balance follow-up</div>
+                        <div className="text-[11px] text-slate-500">status → INVESTIGATING, resolution_outcome → KEEPOPEN</div>
+                      </div>
+                    </label>
+
+                    <label className="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50">
+                      <input
+                        type="radio"
+                        name="shortpay-action"
+                        checked={disposition === 'dispute'}
+                        onChange={() => setDisposition('dispute')}
+                        className="text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <div>
+                        <div className="text-xs font-bold text-slate-900">Mark as customer dispute</div>
+                        <div className="text-[11px] text-slate-500">status → INVESTIGATING, resolution_outcome → DISPUTE</div>
                       </div>
                     </label>
                   </div>
@@ -327,55 +430,48 @@ export const ARExceptionsTab: React.FC = () => {
               </div>
             )}
 
-            {/* Panel 2: Suspense */}
-            {activeException.type === 'Suspense' && (
+            {/* Panel: every other exception type - raw detail JSON, generic resolve */}
+            {activeException.exception_type !== 'SHORT_PAY' && (
               <div className="space-y-4">
-                <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-amber-600 flex-none" />
-                  <span>
-                    Exact payment of ₹1,500,000.00 matched open invoice INV/2026/004, but customer identity requires confirmation.
-                  </span>
+                <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700">
+                  <div className="font-semibold text-slate-900 mb-1">Reason</div>
+                  <div>{activeException.reason_code || '—'}</div>
                 </div>
-
-                <div className="grid grid-cols-2 gap-4">
+                {activeException.detail && (
                   <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg">
-                    <div className="text-[10.5px] font-bold text-slate-400 uppercase">
-                      Suggested Customer Match
-                    </div>
-                    <div className="text-xs font-bold text-slate-900 mt-1">
-                      Beta Retail Solutions
-                    </div>
-                    <div className="text-[11px] text-slate-500">Invoice INV/2026/004 · ₹1,500,000.00</div>
+                    <div className="text-[10.5px] font-bold text-slate-400 uppercase mb-1.5">Detail</div>
+                    <pre className="text-[11px] font-mono text-slate-700 whitespace-pre-wrap break-all">
+                      {JSON.stringify(activeException.detail, null, 2)}
+                    </pre>
                   </div>
-
-                  <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg">
-                    <div className="text-[10.5px] font-bold text-slate-400 uppercase">
-                      Bank Narration
-                    </div>
-                    <div className="text-xs font-mono text-slate-800 mt-1 truncate">
-                      IMPS REMITTANCE REF 990123
-                    </div>
-                  </div>
+                )}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                    Resolution Note
+                  </label>
+                  <textarea
+                    value={resolutionNote}
+                    onChange={(e) => setResolutionNote(e.target.value)}
+                    placeholder="Enter audit note..."
+                    className="w-full bg-white border border-slate-200 rounded-lg p-3 text-xs font-medium text-slate-900 h-16 resize-none focus:outline-none focus:border-indigo-600"
+                  />
                 </div>
               </div>
             )}
 
             {/* Action Buttons */}
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setActiveExceptionKey(null)}
-              >
+              <Button variant="ghost" size="sm" onClick={() => setActiveExceptionId(null)} disabled={saving}>
                 Cancel
               </Button>
               <Button
                 variant="primary"
                 size="sm"
                 icon={Check}
-                onClick={() => handleResolveActive('Resolved')}
+                disabled={saving}
+                onClick={activeException.exception_type === 'SHORT_PAY' ? handleResolveShortPay : handleMarkResolved}
               >
-                Save Decision & Resolve
+                {saving ? 'Saving…' : 'Save Decision & Resolve'}
               </Button>
             </div>
           </div>

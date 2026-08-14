@@ -283,6 +283,82 @@ export interface BankStatement {
   utr?: string;
 }
 
+// ── Real backend shapes (app/reconciliation/schema.py) - M2/M3 run results ──
+export interface RunOut {
+  run_id: string;
+  definition_id: string;
+  run_no: string;
+  period_start: string | null;
+  period_end: string | null;
+  status: 'DRAFT' | 'QUEUED' | 'RUNNING' | 'COMPUTED' | 'APPROVED' | 'CLOSED' | 'FAILED' | string;
+  volume: number | null;
+  matched_count: number | null;
+  exception_count: number | null;
+  matched_value_minor: number | null;
+  exception_value_minor: number | null;
+  unapplied_minor: number | null;
+  prepared_by: string | null;
+  reviewed_by: string | null;
+  signed_at: string | null;
+  run_hash: string | null;
+  attempt_count: number;
+  max_attempts: number;
+  last_error: string | null;
+  started_at: string;
+}
+
+export interface AllocationOut {
+  allocation_id: string;
+  invoice_id: string;
+  payment_id: string;
+  bank_txn_id: string | null;
+  allocated_minor: number;
+}
+
+export interface MatchGroupOut {
+  match_group_id: string;
+  run_id: string;
+  match_type: 'EXACT' | 'TOLERANCE' | 'PARTIAL' | 'SUBSET_SUM' | 'MANY_TO_ONE' | 'ONE_TO_MANY' | 'MANUAL' | string;
+  /** The ALLOCATION-phase rule that committed this match group. */
+  rule_id: string | null;
+  /** The CUSTOMER_LOCK-phase rule that identified the payment's customer. */
+  locked_by_rule_id: string | null;
+  confidence: number | null;
+  status: 'AUTO_MATCHED' | 'SUGGESTED' | 'CONFIRMED' | 'REJECTED' | string;
+  reason: string | null;
+  created_at: string;
+  allocations: AllocationOut[];
+}
+
+export interface ExceptionOut {
+  exception_id: string;
+  run_id: string;
+  exception_no: string | null;
+  exception_type:
+    | 'SHORT_PAY' | 'OVERPAYMENT' | 'UNAPPLIED_CASH' | 'TIMING_DIFFERENCE' | 'GL_VARIANCE'
+    | 'DUPLICATE' | 'MULTIPLE_INVOICE_MATCH' | 'DOUBLE_COLLISION' | 'SUSPENSE' | 'BANK_CHARGE'
+    | 'GATEWAY_VARIANCE' | 'NO_PAYMENT' | string;
+  bank_txn_id: string | null;
+  invoice_id: string | null;
+  customer_id: string | null;
+  discrepancy_minor: number | null;
+  reason_code: string | null;
+  status: 'OPEN' | 'INVESTIGATING' | 'RESOLVED' | 'AUTO_RESOLVED' | 'DEFERRED' | 'WRITTEN_OFF' | 'ADJUSTED' | 'CARRIED_FORWARD' | string;
+  resolution_outcome: 'WRITEOFF' | 'KEEPOPEN' | 'DISPUTE' | 'JOURNAL' | 'ON_ACCOUNT' | string | null;
+  resolver_id: string | null;
+  resolution_notes: string | null;
+  resolved_at: string | null;
+  created_at: string;
+  detail: Record<string, unknown> | null;
+  match_group_id: string | null;
+}
+
+export interface ExceptionUpdatePayload {
+  status?: string;
+  resolution_outcome?: string;
+  resolution_notes?: string;
+}
+
 export interface AREngineResult {
   matchRate?: number;
   autoMatched?: number;

@@ -12,7 +12,11 @@ interface RuleMeta {
   customChips?: (rule: ARRule) => React.ReactNode;
 }
 
-const RULE_METADATA: Record<string, RuleMeta> = {
+// Exported so other views that only need a rule's display label (e.g.
+// ARMatchedTab's "Resolved Via" column, keyed by rule.kind rather than
+// rendering a full card) can reuse the same polished names instead of a
+// second hardcoded copy.
+export const RULE_METADATA: Record<string, RuleMeta> = {
   'dup-utr': {
     label: 'Duplicate UTR Check',
     description:

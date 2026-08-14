@@ -3,7 +3,14 @@
  */
 import { API_ROUTES } from './api/config';
 import { api } from './api/client';
-import type { Reconciliation, ReconciliationRecord } from '../types';
+import type {
+  Reconciliation,
+  ReconciliationRecord,
+  RunOut,
+  MatchGroupOut,
+  ExceptionOut,
+  ExceptionUpdatePayload,
+} from '../types';
 import { resolveARDefinitionId } from './ar.service';
 
 /** Maps backend recon_type (e.g. "AR", "AP", "BANK") to frontend category strings */
@@ -70,11 +77,11 @@ export const reconciliationsService = {
   /**
    * Trigger rule engine execution for a reconciliation
    */
-  async startRun(id: string, periodStart: string, periodEnd: string): Promise<any> {
+  async startRun(id: string, periodStart?: string, periodEnd?: string): Promise<any> {
     const validId = await resolveARDefinitionId(id);
     return api.post(API_ROUTES.RECONCILIATIONS.RUNS(validId), {
-      period_start: periodStart,
-      period_end: periodEnd,
+      period_start: periodStart || null,
+      period_end: periodEnd || null,
     });
   },
 
@@ -84,5 +91,58 @@ export const reconciliationsService = {
 
   async retryRun(runId: string): Promise<any> {
     return api.post(API_ROUTES.RECONCILIATIONS.RUN_RETRY(runId));
+  },
+
+  /**
+   * List every run for a definition - backend already orders by
+   * started_at DESC, most recent first.
+   */
+  async listRuns(id?: string): Promise<RunOut[]> {
+    const validId = await resolveARDefinitionId(id);
+    const raw = await api.get<RunOut[]>(API_ROUTES.RECONCILIATIONS.RUNS(validId));
+    return Array.isArray(raw) ? raw : [];
+  },
+
+  /**
+   * The run the AR workspace should show: the most recent COMPUTED run if
+   * one exists (real results to show), otherwise just the most recent run
+   * of any status (so an in-progress/failed run is still visible instead
+   * of silently falling back to nothing). Null if this definition has
+   * never been run at all.
+   */
+  async getLatestRun(id?: string): Promise<RunOut | null> {
+    const runs = await this.listRuns(id);
+    if (runs.length === 0) return null;
+    return runs.find((r) => r.status === 'COMPUTED') ?? runs[0];
+  },
+
+  /**
+   * Every match group Phase 2 committed for a run, each with its nested
+   * `allocations` - the invoices it settled money against.
+   */
+  async getMatches(runId: string): Promise<MatchGroupOut[]> {
+    const raw = await api.get<MatchGroupOut[]>(API_ROUTES.RECONCILIATIONS.RUN_MATCHES(runId));
+    return Array.isArray(raw) ? raw : [];
+  },
+
+  /**
+   * Every exception a run raised, optionally filtered by status
+   * (one of OPEN|INVESTIGATING|RESOLVED|AUTO_RESOLVED|DEFERRED|
+   * WRITTEN_OFF|ADJUSTED|CARRIED_FORWARD).
+   */
+  async getExceptions(runId: string, status?: string): Promise<ExceptionOut[]> {
+    const raw = await api.get<ExceptionOut[]>(API_ROUTES.RECONCILIATIONS.RUN_EXCEPTIONS(runId), {
+      params: status ? { status_filter: status } : undefined,
+    });
+    return Array.isArray(raw) ? raw : [];
+  },
+
+  /**
+   * Resolve or annotate an exception. `resolved_at` is stamped
+   * automatically server-side the moment `status` moves away from
+   * OPEN/INVESTIGATING - not settable from here.
+   */
+  async updateException(exceptionId: string, payload: ExceptionUpdatePayload): Promise<ExceptionOut> {
+    return api.patch<ExceptionOut>(API_ROUTES.RECONCILIATIONS.EXCEPTION_UPDATE(exceptionId), payload);
   },
 };

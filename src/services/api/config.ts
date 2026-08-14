@@ -26,9 +26,14 @@ export const API_ROUTES = {
   RECONCILIATIONS: {
     LIST: `/reconciliations`,
     DETAIL: (id: string) => `/reconciliations/${id}`,
-    RUNS: (id: string) => `/reconciliations/${id}/run`,
+    // Same URL serves both POST (create/enqueue a run) and GET (list runs)
+    // on the real backend - /reconciliations/{id}/runs, plural.
+    RUNS: (id: string) => `/reconciliations/${id}/runs`,
     RUN_STATUS: (runId: string) => `/runs/${runId}`,
     RUN_RETRY: (runId: string) => `/runs/${runId}/retry`,
+    RUN_MATCHES: (runId: string) => `/runs/${runId}/matches`,
+    RUN_EXCEPTIONS: (runId: string) => `/runs/${runId}/exceptions`,
+    EXCEPTION_UPDATE: (exceptionId: string) => `/exceptions/${exceptionId}`,
   },
   // DataHub — Data Sources
   DATA_HUB: {

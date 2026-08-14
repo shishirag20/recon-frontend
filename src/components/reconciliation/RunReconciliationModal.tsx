@@ -95,13 +95,17 @@ export const RunReconciliationModal: React.FC<RunReconciliationModalProps> = ({
   );
 
   const handleStart = async () => {
-    if (!periodStart || !periodEnd) return;
     setPhase({ type: 'STARTING' });
     try {
+      // Period dates are optional on the backend (RunCreate.period_start/
+      // period_end both default to None) - the period-cutoff-guard and
+      // Short-Pay/GL-check tolerances just don't get a period boundary to
+      // compare against when omitted. Temporarily not required here so a
+      // run can be started without picking dates first.
       const run = await reconciliationsService.startRun(
         definitionId,
-        periodStart,
-        periodEnd
+        periodStart || undefined,
+        periodEnd || undefined
       );
       // Run returns 202 QUEUED with run_id
       startPolling(run.id || run.run_id, run);
@@ -154,14 +158,14 @@ export const RunReconciliationModal: React.FC<RunReconciliationModalProps> = ({
       return (
         <div className="flex flex-col gap-4 my-2">
           <p className="text-xs text-slate-500 leading-relaxed">
-            Select the date window for this reconciliation run.
+            Optionally select a date window for this reconciliation run — leave blank to run against every open invoice regardless of period.
           </p>
 
           {/* Period Date Range */}
           <div className="flex gap-4 items-end">
             <div className="flex-1 flex flex-col gap-1.5">
               <label className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider">
-                Start Date
+                Start Date <span className="normal-case text-slate-400 font-normal">(optional)</span>
               </label>
               <div className="relative">
                 <Calendar className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
@@ -178,7 +182,7 @@ export const RunReconciliationModal: React.FC<RunReconciliationModalProps> = ({
             </div>
             <div className="flex-1 flex flex-col gap-1.5">
               <label className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider">
-                End Date
+                End Date <span className="normal-case text-slate-400 font-normal">(optional)</span>
               </label>
               <div className="relative">
                 <Calendar className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
@@ -195,7 +199,6 @@ export const RunReconciliationModal: React.FC<RunReconciliationModalProps> = ({
           <div className="flex justify-end mt-4">
             <Button
               variant="primary"
-              disabled={!periodStart || !periodEnd}
               onClick={handleStart}
             >
               Start Run
