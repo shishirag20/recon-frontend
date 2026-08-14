@@ -154,7 +154,7 @@ export const RunReconciliationModal: React.FC<RunReconciliationModalProps> = ({
       return (
         <div className="flex flex-col gap-4 my-2">
           <p className="text-xs text-slate-500 leading-relaxed">
-            Select the date window for this reconciliation run. Only records falling within this period will be evaluated and matched by the rules engine.
+            Select the date window for this reconciliation run.
           </p>
 
           {/* Period Date Range */}

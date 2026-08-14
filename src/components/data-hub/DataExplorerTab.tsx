@@ -392,11 +392,8 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
 
                 {/* Dynamic Custom Fields Headers */}
                 {dynamicCustomHeaders.map((col) => (
-                  <th key={col} className="px-4 py-3 text-slate-700 font-semibold normal-case">
-                    <span className="bg-indigo-50 text-indigo-700 border border-indigo-100 px-1.5 py-0.5 rounded text-[10px] uppercase font-bold mr-1">
-                      JSONB
-                    </span>
-                    {col}
+                  <th key={col} className="px-4 py-3 font-bold text-slate-700">
+                    {formatHeaderLabel(col)}
                   </th>
                 ))}
 
