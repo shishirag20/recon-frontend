@@ -358,13 +358,33 @@ export interface ExceptionOut {
   amount_minor?: number | null;
   reason_code: string | null;
   status: 'OPEN' | 'INVESTIGATING' | 'RESOLVED' | 'AUTO_RESOLVED' | 'DEFERRED' | 'WRITTEN_OFF' | 'ADJUSTED' | 'CARRIED_FORWARD' | string;
-  resolution_outcome: 'WRITEOFF' | 'KEEPOPEN' | 'DISPUTE' | 'JOURNAL' | 'ON_ACCOUNT' | string | null;
+  resolution_outcome: 'WRITEOFF' | 'KEEPOPEN' | 'DISPUTE' | 'JOURNAL' | 'ON_ACCOUNT' | 'MANUAL_MATCH' | string | null;
   resolver_id: string | null;
   resolution_notes: string | null;
   resolved_at: string | null;
   created_at: string;
   detail: Record<string, unknown> | null;
   match_group_id: string | null;
+}
+
+/** A run's open/unapplied payments - the candidate pool the
+ * No-Payment-Received resolution panel offers to manually match against an
+ * open invoice (app/reconciliation/schema.py's PaymentOut). */
+export interface PaymentOut {
+  payment_id: string;
+  bank_txn_id: string;
+  bank_reference: string | null;
+  customer_id: string | null;
+  customer_name: string | null;
+  total_received_minor: number;
+  /** Cash from this payment not yet applied to any invoice. */
+  unapplied_minor: number;
+  created_at: string;
+}
+
+export interface ResolveNoPaymentPayload {
+  payment_ids: string[];
+  note?: string;
 }
 
 export interface ExceptionUpdatePayload {

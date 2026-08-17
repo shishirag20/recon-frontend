@@ -10,6 +10,8 @@ import type {
   MatchGroupOut,
   ExceptionOut,
   ExceptionUpdatePayload,
+  PaymentOut,
+  ResolveNoPaymentPayload,
 } from '../types';
 import { resolveARDefinitionId } from './ar.service';
 
@@ -144,5 +146,24 @@ export const reconciliationsService = {
    */
   async updateException(exceptionId: string, payload: ExceptionUpdatePayload): Promise<ExceptionOut> {
     return api.patch<ExceptionOut>(API_ROUTES.RECONCILIATIONS.EXCEPTION_UPDATE(exceptionId), payload);
+  },
+
+  /**
+   * Payments with real leftover cash (unapplied_minor > 0) for a run's
+   * entity - the candidate pool the No-Payment-Received resolution panel
+   * offers to manually match against an open invoice.
+   */
+  async getOpenPayments(runId: string): Promise<PaymentOut[]> {
+    const raw = await api.get<PaymentOut[]>(API_ROUTES.RECONCILIATIONS.RUN_PAYMENTS(runId));
+    return Array.isArray(raw) ? raw : [];
+  },
+
+  /**
+   * Manually matches a NO_PAYMENT exception's invoice to one or more
+   * selected open payments - applies real cash, writes a MANUAL match
+   * group, and cross-resolves any Suspense exception those payments had.
+   */
+  async resolveNoPayment(exceptionId: string, payload: ResolveNoPaymentPayload): Promise<ExceptionOut> {
+    return api.post<ExceptionOut>(API_ROUTES.RECONCILIATIONS.EXCEPTION_RESOLVE_NO_PAYMENT(exceptionId), payload);
   },
 };

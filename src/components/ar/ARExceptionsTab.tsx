@@ -5,9 +5,12 @@ import { Button } from '../ui/Button';
 import { Search, Check, X } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
 import { RULE_METADATA } from './ARRuleCard';
-import type { ExceptionOut, MatchGroupOut, ARRule } from '../../types';
+import type { ExceptionOut, MatchGroupOut, ARRule, RunOut, PaymentOut } from '../../types';
 
 interface ARExceptionsTabProps {
+  /** The active run - needed to fetch its open/unapplied payments for the
+   * No-Payment-Received resolution panel. */
+  run?: RunOut | null;
   exceptions: ExceptionOut[];
   /** Same run's match groups - looked up by match_group_id so the resolution
    * panel can show which match (and which rules) this exception is tied to,
@@ -70,7 +73,7 @@ const DISPOSITION_TO_UPDATE: Record<Disposition, { status: string; resolution_ou
   dispute: { status: 'INVESTIGATING', resolution_outcome: 'DISPUTE' },
 };
 
-export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ exceptions, matches = [], loading, onResolved }) => {
+export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ run, exceptions, matches = [], loading, onResolved }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedType, setSelectedType] = useState<string>('all');
   const [sortOption, setSortOption] = useState<'amount-desc' | 'amount-asc' | 'date-desc'>('date-desc');
@@ -79,6 +82,13 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ exceptions, ma
   const [resolutionNote, setResolutionNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [rulesById, setRulesById] = useState<Record<string, ARRule>>({});
+  // No-Payment-Received panel state - matches the prototype's arNoPaymentPanel
+  // (index copy.html:3259): a checkbox list of open/unapplied payments to
+  // match against the exception's one known invoice, or "defer to next cycle".
+  const [openPayments, setOpenPayments] = useState<PaymentOut[]>([]);
+  const [loadingPayments, setLoadingPayments] = useState(false);
+  const [selectedPaymentIds, setSelectedPaymentIds] = useState<string[]>([]);
+  const [noPaymentAction, setNoPaymentAction] = useState<'match' | 'defer'>('defer');
   const { toast } = useToast();
 
   // Same rule-name resolution ARMatchedTab uses for "Resolved Via" - kept
@@ -140,6 +150,85 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ exceptions, ma
     [exceptions, activeExceptionId]
   );
 
+  // Resets the panel's local state - called from every place that opens,
+  // switches, or closes the active exception, so a stale note/selection
+  // from a previous exception never leaks into the next one. Deliberately
+  // an event-handler helper, not a `useEffect` keyed on activeExceptionId -
+  // resetting state in response to a prop/id change belongs in the handler
+  // that changes it, not in an effect (see react-hooks/set-state-in-effect).
+  const resetPanelState = () => {
+    setResolutionNote('');
+    setDisposition('writeoff');
+    setSelectedPaymentIds([]);
+    setNoPaymentAction('defer');
+    setOpenPayments([]);
+  };
+
+  const openException = (id: string) => {
+    resetPanelState();
+    setActiveExceptionId(id);
+  };
+
+  const closeException = () => {
+    resetPanelState();
+    setActiveExceptionId(null);
+  };
+
+  // Fetch this run's open/unapplied payments only when actually needed -
+  // a NO_PAYMENT exception is open.
+  useEffect(() => {
+    if (!run || activeException?.exception_type !== 'NO_PAYMENT') return;
+    let cancelled = false;
+    (async () => {
+      if (!cancelled) setLoadingPayments(true);
+      try {
+        const payments = await reconciliationsService.getOpenPayments(run.run_id);
+        if (cancelled) return;
+        setOpenPayments(payments);
+        // Default to "match" the moment there's something to match against -
+        // same default the prototype's radio uses (`checked={availablePayments.length}`).
+        setNoPaymentAction(payments.length > 0 ? 'match' : 'defer');
+      } catch {
+        if (!cancelled) setOpenPayments([]);
+      } finally {
+        if (!cancelled) setLoadingPayments(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [run, activeException?.exception_type, activeExceptionId]);
+
+  const togglePaymentSelected = (paymentId: string) => {
+    setSelectedPaymentIds((prev) =>
+      prev.includes(paymentId) ? prev.filter((id) => id !== paymentId) : [...prev, paymentId]
+    );
+  };
+
+  const handleResolveNoPayment = async () => {
+    if (!activeException) return;
+    setSaving(true);
+    try {
+      if (noPaymentAction === 'match') {
+        await reconciliationsService.resolveNoPayment(activeException.exception_id, {
+          payment_ids: selectedPaymentIds,
+          note: resolutionNote || undefined,
+        });
+        toast(`Exception ${activeException.exception_no || shortId(activeException.exception_id)} matched to ${selectedPaymentIds.length} payment(s)`, 'ok');
+      } else {
+        await reconciliationsService.updateException(activeException.exception_id, {
+          status: 'CARRIED_FORWARD',
+          resolution_notes: resolutionNote || undefined,
+        });
+        toast(`Exception ${activeException.exception_no || shortId(activeException.exception_id)} deferred to next cycle`, 'ok');
+      }
+      closeException();
+      onResolved();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Failed to resolve exception', 'bad');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleResolveShortPay = async () => {
     if (!activeException) return;
     setSaving(true);
@@ -151,8 +240,7 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ exceptions, ma
         resolution_notes: resolutionNote || undefined,
       });
       toast(`Exception ${activeException.exception_no || shortId(activeException.exception_id)} → ${status}`, 'ok');
-      setActiveExceptionId(null);
-      setResolutionNote('');
+      closeException();
       onResolved();
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Failed to resolve exception', 'bad');
@@ -170,8 +258,7 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ exceptions, ma
         resolution_notes: resolutionNote || undefined,
       });
       toast(`Exception ${activeException.exception_no || shortId(activeException.exception_id)} marked Resolved`, 'ok');
-      setActiveExceptionId(null);
-      setResolutionNote('');
+      closeException();
       onResolved();
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Failed to resolve exception', 'bad');
@@ -267,7 +354,7 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ exceptions, ma
                 return (
                   <tr
                     key={e.exception_id}
-                    onClick={() => setActiveExceptionId(e.exception_id)}
+                    onClick={() => openException(e.exception_id)}
                     className={`cursor-pointer transition-colors ${isSelected ? 'bg-indigo-50/60 font-medium' : 'hover:bg-slate-50/80'
                       }`}
                   >
@@ -330,7 +417,7 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ exceptions, ma
             </div>
 
             <button
-              onClick={() => setActiveExceptionId(null)}
+              onClick={() => closeException()}
               className="text-slate-400 hover:text-slate-700 p-1 rounded-md"
             >
               <X className="w-4 h-4" />
@@ -450,8 +537,115 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ exceptions, ma
               </div>
             )}
 
+            {/* Panel: No Payment Received - match against open/unapplied
+                payments (matches the prototype's arNoPaymentPanel exactly),
+                or defer to next cycle. */}
+            {activeException.exception_type === 'NO_PAYMENT' && (
+              <div className="space-y-4">
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                  <div className="text-[10.5px] font-bold text-slate-400 uppercase mb-2">Invoice Awaiting Payment</div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-[13px] font-semibold text-slate-900">{activeException.invoice_number || shortId(activeException.invoice_id)}</div>
+                      <div className="text-[11.5px] text-slate-500">{activeException.customer_name || activeException.customer_code || 'Unknown customer'}</div>
+                    </div>
+                    <div className="text-right font-mono text-[13px] font-semibold text-slate-900">
+                      {rupees(exceptionAmountMinor(activeException))}
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                    Open Payments (select any number)
+                  </label>
+                  <div className="text-[11.5px] text-slate-500 mb-2">
+                    {loadingPayments
+                      ? 'Loading open payments…'
+                      : `${openPayments.length} open/unapplied payment${openPayments.length === 1 ? '' : 's'} available to match against this invoice.`}
+                  </div>
+                  <div className="border border-slate-200 rounded-lg bg-white max-h-56 overflow-y-auto">
+                    {loadingPayments ? (
+                      <div className="px-4 py-6 text-center text-slate-400 text-xs">Loading…</div>
+                    ) : openPayments.length === 0 ? (
+                      <div className="px-4 py-6 text-center text-slate-400 text-xs">No open payments available</div>
+                    ) : (
+                      openPayments.map((p) => (
+                        <label
+                          key={p.payment_id}
+                          className="flex items-center gap-3 p-3 border-b border-slate-100 last:border-0 hover:bg-slate-50 cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedPaymentIds.includes(p.payment_id)}
+                            onChange={() => togglePaymentSelected(p.payment_id)}
+                            className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                          />
+                          <div className="flex-1">
+                            <div className="text-[12px] font-medium text-slate-900" title={p.payment_id}>{p.bank_reference || shortId(p.payment_id)}</div>
+                            <div className="text-[11.5px] text-slate-500">{p.customer_name || 'Unknown payer'}</div>
+                          </div>
+                          <div className="text-right font-mono text-[12px] font-semibold text-slate-900">
+                            {rupees(p.unapplied_minor)}
+                            {p.unapplied_minor !== p.total_received_minor && (
+                              <span className="block text-[10.5px] text-slate-400 font-normal">of {rupees(p.total_received_minor)}</span>
+                            )}
+                          </div>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Resolution</label>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50">
+                      <input
+                        type="radio"
+                        name="nopay-action"
+                        checked={noPaymentAction === 'match'}
+                        disabled={openPayments.length === 0}
+                        onChange={() => setNoPaymentAction('match')}
+                        className="text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <div>
+                        <div className="text-xs font-bold text-slate-900">Match selected payment(s) above</div>
+                        <div className="text-[11px] text-slate-500">Link this invoice to one or more available payments</div>
+                      </div>
+                    </label>
+                    <label className="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50">
+                      <input
+                        type="radio"
+                        name="nopay-action"
+                        checked={noPaymentAction === 'defer'}
+                        onChange={() => setNoPaymentAction('defer')}
+                        className="text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <div>
+                        <div className="text-xs font-bold text-slate-900">Defer to next cycle</div>
+                        <div className="text-[11px] text-slate-500">No matching payment available yet — await next payment arrival</div>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                    Note (optional)
+                  </label>
+                  <textarea
+                    value={resolutionNote}
+                    onChange={(e) => setResolutionNote(e.target.value)}
+                    placeholder="Why this payment was chosen (or why deferred)..."
+                    className="w-full bg-white border border-slate-200 rounded-lg p-3 text-xs font-medium text-slate-900 h-16 resize-none focus:outline-none focus:border-indigo-600"
+                  />
+                </div>
+              </div>
+            )}
+
             {/* Panel: every other exception type - raw detail JSON, generic resolve */}
-            {activeException.exception_type !== 'SHORT_PAY' && (
+            {activeException.exception_type !== 'SHORT_PAY' && activeException.exception_type !== 'NO_PAYMENT' && (
               <div className="space-y-4">
                 <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700">
                   <div className="font-semibold text-slate-900 mb-1">Reason</div>
@@ -481,15 +675,24 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ exceptions, ma
 
             {/* Action Buttons */}
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-              <Button variant="ghost" size="sm" onClick={() => setActiveExceptionId(null)} disabled={saving}>
+              <Button variant="ghost" size="sm" onClick={() => closeException()} disabled={saving}>
                 Cancel
               </Button>
               <Button
                 variant="primary"
                 size="sm"
                 icon={Check}
-                disabled={saving}
-                onClick={activeException.exception_type === 'SHORT_PAY' ? handleResolveShortPay : handleMarkResolved}
+                disabled={
+                  saving ||
+                  (activeException.exception_type === 'NO_PAYMENT' && noPaymentAction === 'match' && selectedPaymentIds.length === 0)
+                }
+                onClick={
+                  activeException.exception_type === 'SHORT_PAY'
+                    ? handleResolveShortPay
+                    : activeException.exception_type === 'NO_PAYMENT'
+                      ? handleResolveNoPayment
+                      : handleMarkResolved
+                }
               >
                 {saving ? 'Saving…' : 'Save Decision & Resolve'}
               </Button>

@@ -33,7 +33,9 @@ export const API_ROUTES = {
     RUN_RETRY: (runId: string) => `/runs/${runId}/retry`,
     RUN_MATCHES: (runId: string) => `/runs/${runId}/matches`,
     RUN_EXCEPTIONS: (runId: string) => `/runs/${runId}/exceptions`,
+    RUN_PAYMENTS: (runId: string) => `/runs/${runId}/payments`,
     EXCEPTION_UPDATE: (exceptionId: string) => `/exceptions/${exceptionId}`,
+    EXCEPTION_RESOLVE_NO_PAYMENT: (exceptionId: string) => `/exceptions/${exceptionId}/resolve-no-payment`,
   },
   // DataHub — Data Sources
   DATA_HUB: {

@@ -116,7 +116,7 @@ export const ARWorkspacePage: React.FC = () => {
         {activeTab === 'rules' && <ARRulesStudioTab />}
 
         {activeTab === 'exceptions' && (
-          <ARExceptionsTab exceptions={exceptions} matches={matches} loading={loading} onResolved={refetch} />
+          <ARExceptionsTab run={run} exceptions={exceptions} matches={matches} loading={loading} onResolved={refetch} />
         )}
       </div>
     </div>
