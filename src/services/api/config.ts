@@ -34,8 +34,11 @@ export const API_ROUTES = {
     RUN_MATCHES: (runId: string) => `/runs/${runId}/matches`,
     RUN_EXCEPTIONS: (runId: string) => `/runs/${runId}/exceptions`,
     RUN_PAYMENTS: (runId: string) => `/runs/${runId}/payments`,
+    RUN_OPEN_INVOICES: (runId: string) => `/runs/${runId}/open-invoices`,
     EXCEPTION_UPDATE: (exceptionId: string) => `/exceptions/${exceptionId}`,
     EXCEPTION_RESOLVE_NO_PAYMENT: (exceptionId: string) => `/exceptions/${exceptionId}/resolve-no-payment`,
+    EXCEPTION_RESOLVE_SUSPENSE: (exceptionId: string) => `/exceptions/${exceptionId}/resolve-suspense`,
+    CUSTOMER_OPEN_INVOICES: (customerId: string) => `/customers/${customerId}/open-invoices`,
   },
   // DataHub — Data Sources
   DATA_HUB: {

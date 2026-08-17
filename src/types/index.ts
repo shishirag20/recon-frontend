@@ -354,6 +354,8 @@ export interface ExceptionOut {
   customer_code?: string | null;
   invoice_number?: string | null;
   bank_reference?: string | null;
+  payer_name?: string | null;
+  narration?: string | null;
   discrepancy_minor: number | null;
   amount_minor?: number | null;
   reason_code: string | null;
@@ -384,6 +386,24 @@ export interface PaymentOut {
 
 export interface ResolveNoPaymentPayload {
   payment_ids: string[];
+  note?: string;
+}
+
+/** A customer's open invoices - the Suspense resolution panel's invoice
+ * picker, once a candidate customer is selected
+ * (app/reconciliation/schema.py's InvoiceSummaryOut). */
+export interface InvoiceSummaryOut {
+  invoice_id: string;
+  invoice_number: string;
+  balance_due_minor: number;
+  due_date: string;
+  customer_id: string;
+  customer_name: string;
+}
+
+export interface ResolveSuspensePayload {
+  customer_id: string;
+  invoice_ids?: string[];
   note?: string;
 }
 

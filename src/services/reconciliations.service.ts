@@ -12,6 +12,8 @@ import type {
   ExceptionUpdatePayload,
   PaymentOut,
   ResolveNoPaymentPayload,
+  InvoiceSummaryOut,
+  ResolveSuspensePayload,
 } from '../types';
 import { resolveARDefinitionId } from './ar.service';
 
@@ -165,5 +167,35 @@ export const reconciliationsService = {
    */
   async resolveNoPayment(exceptionId: string, payload: ResolveNoPaymentPayload): Promise<ExceptionOut> {
     return api.post<ExceptionOut>(API_ROUTES.RECONCILIATIONS.EXCEPTION_RESOLVE_NO_PAYMENT(exceptionId), payload);
+  },
+
+  /**
+   * A customer's open invoices - the Suspense resolution panel's invoice
+   * picker, once a candidate customer is selected (suggested, from the
+   * pool, or picked manually).
+   */
+  async getOpenInvoicesForCustomer(customerId: string): Promise<InvoiceSummaryOut[]> {
+    const raw = await api.get<InvoiceSummaryOut[]>(API_ROUTES.RECONCILIATIONS.CUSTOMER_OPEN_INVOICES(customerId));
+    return Array.isArray(raw) ? raw : [];
+  },
+
+  /**
+   * Every open invoice for a run's entity, across every customer,
+   * optionally filtered by invoice number / customer name - the Suspense
+   * resolution panel's "match to a different invoice" fallback.
+   */
+  async getOpenInvoicesForRun(runId: string, search?: string): Promise<InvoiceSummaryOut[]> {
+    const raw = await api.get<InvoiceSummaryOut[]>(API_ROUTES.RECONCILIATIONS.RUN_OPEN_INVOICES(runId), {
+      params: search ? { search } : undefined,
+    });
+    return Array.isArray(raw) ? raw : [];
+  },
+
+  /**
+   * Manually matches a SUSPENSE exception's payment to a confirmed
+   * customer and (optionally) specific open invoices of theirs.
+   */
+  async resolveSuspense(exceptionId: string, payload: ResolveSuspensePayload): Promise<ExceptionOut> {
+    return api.post<ExceptionOut>(API_ROUTES.RECONCILIATIONS.EXCEPTION_RESOLVE_SUSPENSE(exceptionId), payload);
   },
 };

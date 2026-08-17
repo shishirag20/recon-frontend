@@ -5,7 +5,7 @@ import { Button } from '../ui/Button';
 import { Search, Check, X } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
 import { RULE_METADATA } from './ARRuleCard';
-import type { ExceptionOut, MatchGroupOut, ARRule, RunOut, PaymentOut } from '../../types';
+import type { ExceptionOut, MatchGroupOut, ARRule, RunOut, PaymentOut, InvoiceSummaryOut } from '../../types';
 
 interface ARExceptionsTabProps {
   /** The active run - needed to fetch its open/unapplied payments for the
@@ -52,6 +52,13 @@ interface KnownExceptionDetail {
   variance_minor?: number;
   amount_minor?: number;
   balance_due_minor?: number;
+  /** SUSPENSE only - see engine.py's `_suspense` calls in Pass A. Exactly
+   * one of `suggested_customer_id` / `candidate_customer_ids` is set,
+   * mirroring the prototype's own two suggestion variants; neither is set
+   * for a payment Phase 1 couldn't even pool a candidate for. */
+  suggested_customer_id?: string;
+  suggested_invoice_ids?: string[];
+  candidate_customer_ids?: string[];
 }
 const exceptionDetail = (e: ExceptionOut): KnownExceptionDetail => (e.detail || {}) as KnownExceptionDetail;
 
@@ -89,6 +96,21 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ run, exception
   const [loadingPayments, setLoadingPayments] = useState(false);
   const [selectedPaymentIds, setSelectedPaymentIds] = useState<string[]>([]);
   const [noPaymentAction, setNoPaymentAction] = useState<'match' | 'defer'>('defer');
+  // Suspense panel state - matches the prototype's arSuspensePanel
+  // (index copy.html:3483): a radio pick of "who is this" (the suggested
+  // customer, one of a candidate pool, or "post to Suspense GL"), then a
+  // checkbox pick of which of that customer's open invoices it settles.
+  const [suspenseInvoicesByCustomer, setSuspenseInvoicesByCustomer] = useState<Record<string, InvoiceSummaryOut[]>>({});
+  const [loadingSuspenseCandidates, setLoadingSuspenseCandidates] = useState(false);
+  const [suspenseCustomerChoice, setSuspenseCustomerChoice] = useState<string | 'gl' | null>(null);
+  const [suspenseSelectedInvoiceIds, setSuspenseSelectedInvoiceIds] = useState<string[]>([]);
+  // "Match to a different invoice" fallback (index copy.html's collapsible
+  // `fallbackBlock`) - browses every open invoice across every customer,
+  // for when the suggestion/candidate pool is wrong or empty.
+  const [showManualInvoicePicker, setShowManualInvoicePicker] = useState(false);
+  const [manualInvoiceSearch, setManualInvoiceSearch] = useState('');
+  const [manualInvoices, setManualInvoices] = useState<InvoiceSummaryOut[]>([]);
+  const [loadingManualInvoices, setLoadingManualInvoices] = useState(false);
   const { toast } = useToast();
 
   // Same rule-name resolution ARMatchedTab uses for "Resolved Via" - kept
@@ -162,6 +184,12 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ run, exception
     setSelectedPaymentIds([]);
     setNoPaymentAction('defer');
     setOpenPayments([]);
+    setSuspenseInvoicesByCustomer({});
+    setSuspenseCustomerChoice(null);
+    setSuspenseSelectedInvoiceIds([]);
+    setShowManualInvoicePicker(false);
+    setManualInvoiceSearch('');
+    setManualInvoices([]);
   };
 
   const openException = (id: string) => {
@@ -196,6 +224,119 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ run, exception
     })();
     return () => { cancelled = true; };
   }, [run, activeException?.exception_type, activeExceptionId]);
+
+  // Fetch open invoices for every candidate a SUSPENSE exception names
+  // (the suggested customer, or its whole candidate pool) - one call per
+  // candidate, which also doubles as the customer-name lookup for display
+  // (see InvoiceSummaryOut.customer_name). Defaults the panel to whichever
+  // choice the prototype defaults its radios to: the suggestion if there is
+  // one, otherwise "post to Suspense GL" (a candidate pool starts with no
+  // customer pre-picked, same as the prototype's pool radios not being the
+  // default-checked one).
+  useEffect(() => {
+    if (activeException?.exception_type !== 'SUSPENSE') return;
+    let cancelled = false;
+    (async () => {
+      const detail = exceptionDetail(activeException);
+      const candidateIds = detail.suggested_customer_id
+        ? [detail.suggested_customer_id]
+        : detail.candidate_customer_ids || [];
+      if (candidateIds.length === 0) {
+        if (!cancelled) setSuspenseCustomerChoice('gl');
+        return;
+      }
+      setLoadingSuspenseCandidates(true);
+      try {
+        const entries = await Promise.all(
+          candidateIds.map(async (cid) => [cid, await reconciliationsService.getOpenInvoicesForCustomer(cid)] as const)
+        );
+        if (cancelled) return;
+        setSuspenseInvoicesByCustomer(Object.fromEntries(entries));
+        if (detail.suggested_customer_id) {
+          setSuspenseCustomerChoice(detail.suggested_customer_id);
+          setSuspenseSelectedInvoiceIds(detail.suggested_invoice_ids || []);
+        }
+      } catch {
+        if (!cancelled) setSuspenseCustomerChoice('gl');
+      } finally {
+        if (!cancelled) setLoadingSuspenseCandidates(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeException, activeExceptionId]);
+
+  const chooseSuspenseCustomer = (customerId: string) => {
+    setSuspenseCustomerChoice(customerId);
+    setSuspenseSelectedInvoiceIds([]);
+  };
+
+  const toggleSuspenseInvoiceSelected = (invoiceId: string) => {
+    setSuspenseSelectedInvoiceIds((prev) =>
+      prev.includes(invoiceId) ? prev.filter((id) => id !== invoiceId) : [...prev, invoiceId]
+    );
+  };
+
+  // Picking an invoice from the "match to a different invoice" fallback
+  // for a customer other than the one currently chosen starts a fresh
+  // selection with just that invoice - a payment can only be locked to one
+  // customer, so mixing invoices across customers isn't a valid state.
+  const toggleManualInvoice = (inv: InvoiceSummaryOut) => {
+    if (suspenseCustomerChoice !== inv.customer_id) {
+      setSuspenseCustomerChoice(inv.customer_id);
+      setSuspenseSelectedInvoiceIds([inv.invoice_id]);
+      return;
+    }
+    toggleSuspenseInvoiceSelected(inv.invoice_id);
+  };
+
+  // Fetches the manual invoice browser's list once it's opened, and again
+  // (debounced) as the search text changes.
+  useEffect(() => {
+    if (!run || !showManualInvoicePicker) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      (async () => {
+        setLoadingManualInvoices(true);
+        try {
+          const invoices = await reconciliationsService.getOpenInvoicesForRun(run.run_id, manualInvoiceSearch || undefined);
+          if (!cancelled) setManualInvoices(invoices);
+        } catch {
+          if (!cancelled) setManualInvoices([]);
+        } finally {
+          if (!cancelled) setLoadingManualInvoices(false);
+        }
+      })();
+    }, 250);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [run, showManualInvoicePicker, manualInvoiceSearch]);
+
+  const handleResolveSuspense = async () => {
+    if (!activeException) return;
+    setSaving(true);
+    try {
+      if (suspenseCustomerChoice === 'gl' || !suspenseCustomerChoice) {
+        await reconciliationsService.updateException(activeException.exception_id, {
+          status: 'RESOLVED',
+          resolution_outcome: 'JOURNAL',
+          resolution_notes: resolutionNote || undefined,
+        });
+        toast(`Exception ${activeException.exception_no || shortId(activeException.exception_id)} posted to Suspense GL`, 'ok');
+      } else {
+        await reconciliationsService.resolveSuspense(activeException.exception_id, {
+          customer_id: suspenseCustomerChoice,
+          invoice_ids: suspenseSelectedInvoiceIds,
+          note: resolutionNote || undefined,
+        });
+        toast(`Exception ${activeException.exception_no || shortId(activeException.exception_id)} matched to a customer`, 'ok');
+      }
+      closeException();
+      onResolved();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Failed to resolve exception', 'bad');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const togglePaymentSelected = (paymentId: string) => {
     setSelectedPaymentIds((prev) =>
@@ -644,8 +785,196 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ run, exception
               </div>
             )}
 
+            {/* Panel: Suspense - matches the prototype's arSuspensePanel:
+                unidentified-payment summary, a radio pick of who it likely
+                belongs to (the suggestion, or a candidate pool), that
+                customer's open invoices to optionally settle, or post
+                straight to the Suspense/Unidentified Cash GL account. */}
+            {activeException.exception_type === 'SUSPENSE' && (() => {
+              const detail = exceptionDetail(activeException);
+              const candidateIds = detail.suggested_customer_id
+                ? [detail.suggested_customer_id]
+                : detail.candidate_customer_ids || [];
+              // Merges the candidate-fetch cache with whatever the manual
+              // browser turned up for this customer - a manually-picked
+              // customer (not a suggestion/pool candidate) only has invoices
+              // here via the latter.
+              const chosenInvoices = suspenseCustomerChoice && suspenseCustomerChoice !== 'gl'
+                ? [
+                  ...(suspenseInvoicesByCustomer[suspenseCustomerChoice] || []),
+                  ...manualInvoices.filter((i) => i.customer_id === suspenseCustomerChoice),
+                ].filter((inv, idx, arr) => arr.findIndex((i) => i.invoice_id === inv.invoice_id) === idx)
+                : [];
+              return (
+                <div className="space-y-4">
+                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                    <div className="text-[10.5px] font-bold text-slate-400 uppercase mb-2">Unidentified Payment</div>
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <div className="text-[13px] font-semibold text-slate-900">{activeException.payer_name || 'Unknown Payer'}</div>
+                        <div className="text-[11.5px] text-slate-500">
+                          {activeException.bank_reference || shortId(activeException.bank_txn_id)}
+                        </div>
+                      </div>
+                      <div className="text-right font-mono text-[13px] font-semibold text-amber-700">
+                        {rupees(exceptionAmountMinor(activeException))}
+                      </div>
+                    </div>
+                    {activeException.narration && (
+                      <div className="text-[11.5px] text-slate-600 bg-white border border-slate-200 rounded px-3 py-2 mt-2">
+                        <span className="text-slate-400 mr-2">Bank Narration:</span>{activeException.narration}
+                      </div>
+                    )}
+                  </div>
+
+                  {candidateIds.length > 0 && (
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                        {detail.suggested_customer_id ? 'Likely Match (Exact Amount)' : 'Candidate Customers'}
+                      </label>
+                      {!detail.suggested_customer_id && (
+                        <div className="text-[11.5px] text-slate-500 mb-2">
+                          Found {candidateIds.length} possible customer{candidateIds.length === 1 ? '' : 's'} based on name similarity, but no exact invoice match. Pick one to apply this payment to their account.
+                        </div>
+                      )}
+                      {loadingSuspenseCandidates ? (
+                        <div className="px-4 py-6 text-center text-slate-400 text-xs border border-slate-200 rounded-lg">Loading candidates…</div>
+                      ) : (
+                        <div className="border border-slate-200 rounded-lg bg-white overflow-hidden">
+                          {candidateIds.map((cid) => {
+                            const invs = suspenseInvoicesByCustomer[cid] || [];
+                            const totalDue = invs.reduce((sum, i) => sum + i.balance_due_minor, 0);
+                            const name = invs[0]?.customer_name || shortId(cid);
+                            return (
+                              <label key={cid} className="flex items-center gap-3 p-3 border-b border-slate-100 last:border-0 hover:bg-slate-50 cursor-pointer">
+                                <input
+                                  type="radio"
+                                  name="suspense-customer"
+                                  checked={suspenseCustomerChoice === cid}
+                                  onChange={() => chooseSuspenseCustomer(cid)}
+                                  className="text-indigo-600 focus:ring-indigo-500"
+                                />
+                                <div className="flex-1">
+                                  <div className="text-[13px] font-medium text-slate-900">{name}</div>
+                                  <div className="text-[11.5px] text-slate-500">{invs.length} open invoice{invs.length === 1 ? '' : 's'} ({rupees(totalDue)} total due)</div>
+                                </div>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {suspenseCustomerChoice && suspenseCustomerChoice !== 'gl' && (
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                        Apply to invoice(s) (optional)
+                      </label>
+                      <div className="text-[11.5px] text-slate-500 mb-2">
+                        Leave nothing checked to keep this as unapplied on-account credit for this customer instead.
+                      </div>
+                      <div className="border border-slate-200 rounded-lg bg-white max-h-48 overflow-y-auto">
+                        {chosenInvoices.length === 0 ? (
+                          <div className="px-4 py-6 text-center text-slate-400 text-xs">No open invoices for this customer</div>
+                        ) : (
+                          chosenInvoices.map((inv) => (
+                            <label key={inv.invoice_id} className="flex items-center gap-3 p-3 border-b border-slate-100 last:border-0 hover:bg-slate-50 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={suspenseSelectedInvoiceIds.includes(inv.invoice_id)}
+                                onChange={() => toggleSuspenseInvoiceSelected(inv.invoice_id)}
+                                className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                              />
+                              <div className="flex-1 text-[12.5px] font-medium text-slate-900">{inv.invoice_number}</div>
+                              <div className="text-right font-mono text-[12px] font-semibold text-slate-900">{rupees(inv.balance_due_minor)}</div>
+                            </label>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* "Match to a different invoice" fallback - browses every open
+                      invoice across every customer, not just the suggestion/pool,
+                      for when neither is right. */}
+                  <div className="border border-slate-200 rounded-lg bg-white overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setShowManualInvoicePicker((v) => !v)}
+                      className="w-full text-left px-4 py-3 flex items-center justify-between font-medium text-[13px] text-slate-900 hover:bg-slate-50"
+                    >
+                      <span>Match to a different invoice</span>
+                      <span className={`text-slate-400 transition-transform ${showManualInvoicePicker ? 'rotate-180' : ''}`}>▼</span>
+                    </button>
+                    {showManualInvoicePicker && (
+                      <div className="border-t border-slate-200 p-3">
+                        <div className="relative mb-2">
+                          <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
+                          <input
+                            type="text"
+                            value={manualInvoiceSearch}
+                            onChange={(e) => setManualInvoiceSearch(e.target.value)}
+                            placeholder="Search invoice number or customer..."
+                            className="w-full pl-8 pr-3 h-8 bg-slate-50 border border-slate-200 rounded-md text-xs text-slate-900 focus:outline-none focus:border-indigo-600"
+                          />
+                        </div>
+                        <div className="border border-slate-200 rounded-lg max-h-48 overflow-y-auto">
+                          {loadingManualInvoices ? (
+                            <div className="px-4 py-6 text-center text-slate-400 text-xs">Loading…</div>
+                          ) : manualInvoices.length === 0 ? (
+                            <div className="px-4 py-6 text-center text-slate-400 text-xs">No open invoices match</div>
+                          ) : (
+                            manualInvoices.map((inv) => (
+                              <label key={inv.invoice_id} className="flex items-center gap-3 p-2.5 border-b border-slate-100 last:border-0 hover:bg-slate-50 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={suspenseCustomerChoice === inv.customer_id && suspenseSelectedInvoiceIds.includes(inv.invoice_id)}
+                                  onChange={() => toggleManualInvoice(inv)}
+                                  className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                />
+                                <div className="flex-1">
+                                  <div className="text-[12.5px] font-medium text-slate-900">{inv.invoice_number}</div>
+                                  <div className="text-[11px] text-slate-500">{inv.customer_name}</div>
+                                </div>
+                                <div className="text-right font-mono text-[12px] font-semibold text-slate-900">{rupees(inv.balance_due_minor)}</div>
+                              </label>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <label className="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50">
+                    <input
+                      type="radio"
+                      name="suspense-customer"
+                      checked={suspenseCustomerChoice === 'gl'}
+                      onChange={() => setSuspenseCustomerChoice('gl')}
+                      className="text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <div>
+                      <div className="text-xs font-bold text-slate-900">Post to Suspense / Unidentified Cash GL</div>
+                      <div className="text-[11px] text-slate-500">Leave on ledger as an unapplied generic credit</div>
+                    </div>
+                  </label>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Note</label>
+                    <textarea
+                      value={resolutionNote}
+                      onChange={(e) => setResolutionNote(e.target.value)}
+                      placeholder="Why this was mapped here..."
+                      className="w-full bg-white border border-slate-200 rounded-lg p-3 text-xs font-medium text-slate-900 h-16 resize-none focus:outline-none focus:border-indigo-600"
+                    />
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Panel: every other exception type - raw detail JSON, generic resolve */}
-            {activeException.exception_type !== 'SHORT_PAY' && activeException.exception_type !== 'NO_PAYMENT' && (
+            {activeException.exception_type !== 'SHORT_PAY' && activeException.exception_type !== 'NO_PAYMENT' && activeException.exception_type !== 'SUSPENSE' && (
               <div className="space-y-4">
                 <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700">
                   <div className="font-semibold text-slate-900 mb-1">Reason</div>
@@ -684,14 +1013,17 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ run, exception
                 icon={Check}
                 disabled={
                   saving ||
-                  (activeException.exception_type === 'NO_PAYMENT' && noPaymentAction === 'match' && selectedPaymentIds.length === 0)
+                  (activeException.exception_type === 'NO_PAYMENT' && noPaymentAction === 'match' && selectedPaymentIds.length === 0) ||
+                  (activeException.exception_type === 'SUSPENSE' && !suspenseCustomerChoice)
                 }
                 onClick={
                   activeException.exception_type === 'SHORT_PAY'
                     ? handleResolveShortPay
                     : activeException.exception_type === 'NO_PAYMENT'
                       ? handleResolveNoPayment
-                      : handleMarkResolved
+                      : activeException.exception_type === 'SUSPENSE'
+                        ? handleResolveSuspense
+                        : handleMarkResolved
                 }
               >
                 {saving ? 'Saving…' : 'Save Decision & Resolve'}
