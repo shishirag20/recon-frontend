@@ -103,7 +103,7 @@ export interface ResolvedFieldMapping {
   is_matched: boolean;
 }
 
-export interface ResolveSchemaResponse {
+export interface ResolveMappingResponse {
   stream: IngestionStream;
   canonical_fields: string[];
   mappings: ResolvedFieldMapping[];

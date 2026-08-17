@@ -78,7 +78,7 @@ export const FieldMappingTransformModal: React.FC<FieldMappingTransformModalProp
         setCsvHeaders(headers);
 
         if (headers.length > 0) {
-          const res = await fieldMappingService.resolveSchema(stream, headers);
+          const res = await fieldMappingService.resolveMapping(stream, headers);
           if (cancelled) return;
 
           setCanonicalFieldOptions(res.canonical_fields || []);

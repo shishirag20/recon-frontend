@@ -19,7 +19,7 @@ import type {
   MappingPreviewRequest,
   MappingPreviewResponse,
   ResolvedHeader,
-  ResolveSchemaResponse,
+  ResolveMappingResponse,
   IngestionJobOut,
   CanonicalRecordOut,
   CanonicalRecordUpdate,
@@ -103,9 +103,9 @@ export const fieldMappingService = {
     return res.results;
   },
 
-  async resolveSchema(stream: string, headers: string[]): Promise<ResolveSchemaResponse> {
-    return api.post<ResolveSchemaResponse>(
-      API_ROUTES.DATA_HUB.FIELD_MAPPING_RESOLVE_SCHEMA(stream),
+  async resolveMapping(stream: string, headers: string[]): Promise<ResolveMappingResponse> {
+    return api.post<ResolveMappingResponse>(
+      API_ROUTES.DATA_HUB.FIELD_MAPPING_RESOLVE_MAPPING(stream),
       { headers }
     );
   },
