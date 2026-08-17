@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import type { ARRule } from '../../types';
 import { ConfidenceBar } from '../ui/ConfidenceBar';
 import { Switch } from '../ui/Switch';
 import { Button } from '../ui/Button';
 import { ChevronUp, ChevronDown } from 'lucide-react';
 import { ARRuleEditor } from './ARRuleEditor';
+import { humanizeField } from '../../utils/formatters';
 
 interface RuleMeta {
   label?: string;
@@ -126,18 +127,21 @@ export const RULE_METADATA: Record<string, RuleMeta> = {
     ),
   },
   'write-off': {
-    label: 'Materiality Write-Off Match',
+    label: 'Small Balance Write-Off',
     description:
       'Automatically closes out a residual invoice balance that falls below the configured materiality threshold, rather than leaving it open as a disputed shortfall.',
-    customChips: (rule) => (
-      <>
-        <span className="chip font-semibold">Materiality Write-Off Match</span>
-        <span className="chip font-mono">shortfall_amount ↔ materiality_threshold</span>
-        <span className="chip font-medium">
-          Materiality threshold: ₹{Number(rule.config?.max_writeoff_amount ?? rule.cond?.amount?.value ?? 500.0).toFixed(2)}
-        </span>
-      </>
-    ),
+    customChips: (rule) => {
+      const rawVal = rule.config?.amount?.value_minor ?? rule.config?.max_writeoff_amount ?? rule.config?.materiality_threshold ?? rule.cond?.amount?.value ?? 500;
+      const thresholdVal = typeof rawVal === 'number' && rawVal >= 100 ? rawVal / 100 : Number(rawVal);
+      return (
+        <>
+          <span className="chip font-mono">amount ↔ effective_balance</span>
+          <span className="chip font-medium">
+            Materiality threshold: ₹{thresholdVal.toFixed(2)}
+          </span>
+        </>
+      );
+    },
   },
   overpayment: {
     label: 'Overpayment to On-Account Credit',
@@ -279,9 +283,9 @@ export function getRuleDisplayFields(rule: ARRule) {
       secondField = secondField || 'invoice_amount';
       break;
     case 'write-off':
-      bankField = bankField || 'shortfall_amount';
-      secondSource = secondSource || 'Sub-Ledger (Invoice)';
-      secondField = secondField || 'materiality_threshold';
+      bankField = bankField || 'amount';
+      secondSource = secondSource || 'Sub-Ledger (Invoices)';
+      secondField = secondField || 'effective_balance';
       break;
     case 'overpayment':
       bankField = bankField || 'excess_amount';
@@ -339,6 +343,15 @@ export const ARRuleCard: React.FC<ARRuleCardProps> = ({
   onMoveDown,
   onUpdateRule,
 }) => {
+  const [draftRule, setDraftRule] = useState<ARRule>(rule);
+
+  // Sync draft with external rule changes when not actively editing
+  useEffect(() => {
+    if (!isEditing) {
+      setDraftRule(rule);
+    }
+  }, [rule, isEditing]);
+
   const meta: RuleMeta = RULE_METADATA[rule.kind] || {
     label: rule.name,
     description: rule.config?.description || 'Applies automated matching rule logic against incoming transaction stream.',
@@ -346,6 +359,20 @@ export const ARRuleCard: React.FC<ARRuleCardProps> = ({
 
   const { bankField, secondField } = getRuleDisplayFields(rule);
   const displayPriority = rule.priority !== undefined && rule.priority !== null ? rule.priority : index + 1;
+
+  const handleDoneClick = () => {
+    if (isEditing) {
+      // Check if draftRule actually changed compared to incoming rule
+      const hasChanged = JSON.stringify(draftRule) !== JSON.stringify(rule);
+      if (hasChanged) {
+        onUpdateRule(draftRule);
+      }
+      onToggleEdit();
+    } else {
+      setDraftRule(rule);
+      onToggleEdit();
+    }
+  };
 
   return (
     <div
@@ -412,7 +439,7 @@ export const ARRuleCard: React.FC<ARRuleCardProps> = ({
             ) : (
               <>
                 <span className="chip font-semibold">{meta.label || rule.name}</span>
-                <span className="chip font-mono">{bankField} ↔ {secondField}</span>
+                <span className="chip font-mono">{humanizeField(bankField)} ↔ {humanizeField(secondField)}</span>
                 {rule.confidence !== null && rule.confidence !== undefined && (
                   <span className="chip font-medium">Confidence: {rule.confidence}%</span>
                 )}
@@ -430,7 +457,7 @@ export const ARRuleCard: React.FC<ARRuleCardProps> = ({
           <Button
             variant="ghost"
             size="sm"
-            onClick={onToggleEdit}
+            onClick={handleDoneClick}
             className="text-xs font-semibold px-2.5 py-1 bg-slate-100 border border-slate-200 text-slate-700 hover:bg-slate-200 rounded-md"
           >
             {isEditing ? 'Done' : 'Edit'}
@@ -443,9 +470,9 @@ export const ARRuleCard: React.FC<ARRuleCardProps> = ({
       {/* Expanded Rule Editor */}
       {isEditing && (
         <ARRuleEditor
-          rule={rule}
+          rule={draftRule}
           matchedCount={matchedCount}
-          onUpdateRule={onUpdateRule}
+          onUpdateRule={setDraftRule}
         />
       )}
     </div>

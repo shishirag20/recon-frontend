@@ -2,12 +2,160 @@ import React, { useState, useEffect } from 'react';
 import type { ARRule } from '../../types';
 import { getRuleDisplayFields } from './ARRuleCard';
 import { fieldMappingService } from '../../services/dataHub.service';
+import { humanizeField } from '../../utils/formatters';
 
 interface ARRuleEditorProps {
   rule: ARRule;
   matchedCount?: number;
   onUpdateRule: (updated: ARRule) => void;
 }
+
+interface RuleParamConfig {
+  label: string;
+  value: number;
+  step?: number;
+  min?: number;
+  onChange: (val: number) => void;
+}
+
+function getRuleParamConfig(rule: ARRule, onUpdateRule: (updated: ARRule) => void): RuleParamConfig | null {
+  switch (rule.kind) {
+    case 'write-off': {
+      const rawVal =
+        rule.config?.amount?.value_minor ??
+        rule.config?.max_writeoff_amount ??
+        rule.config?.materiality_threshold ??
+        rule.cond?.amount?.value ??
+        500;
+      const val = typeof rawVal === 'number' && rawVal >= 100 ? rawVal / 100 : Number(rawVal);
+      return {
+        label: 'MATERIALITY THRESHOLD',
+        value: val,
+        step: 0.1,
+        min: 0,
+        onChange: (newVal) => {
+          const minor = Math.round(newVal * 100);
+          const newConfig = {
+            ...(rule.config || {}),
+            amount: { mode: 'tolerance', value_minor: minor },
+            max_writeoff_amount: minor,
+            materiality_threshold: minor,
+          };
+          onUpdateRule({
+            ...rule,
+            config: newConfig,
+            cond: { ...(rule.cond || {}), amount: { mode: 'abs', value: minor } },
+          });
+        },
+      };
+    }
+    case 'bank-fee': {
+      const rawVal =
+        rule.config?.amount?.value_minor ??
+        rule.config?.max_fee_amount ??
+        rule.cond?.amount?.value ??
+        100;
+      const val = typeof rawVal === 'number' && rawVal >= 100 ? rawVal / 100 : Number(rawVal);
+      return {
+        label: 'VARIANCE TOLERANCE',
+        value: val,
+        step: 0.1,
+        min: 0,
+        onChange: (newVal) => {
+          const minor = Math.round(newVal * 100);
+          const newConfig = {
+            ...(rule.config || {}),
+            amount: { mode: 'tolerance', value_minor: minor },
+            max_fee_amount: minor,
+          };
+          onUpdateRule({
+            ...rule,
+            config: newConfig,
+            cond: { ...(rule.cond || {}), amount: { mode: 'abs', value: minor } },
+          });
+        },
+      };
+    }
+    case 'subset-sum': {
+      const val =
+        rule.config?.max_invoices ??
+        rule.config?.max_combo ??
+        rule.cond?.amount?.value ??
+        3;
+      return {
+        label: 'MAX COMBO SIZE',
+        value: Number(val),
+        step: 1,
+        min: 2,
+        onChange: (newVal) => {
+          const newConfig = {
+            ...(rule.config || {}),
+            max_invoices: newVal,
+            max_combo: newVal,
+          };
+          onUpdateRule({
+            ...rule,
+            config: newConfig,
+            cond: { ...(rule.cond || {}), amount: { mode: 'abs', value: newVal } },
+          });
+        },
+      };
+    }
+    case 'fuzzy-name': {
+      const val = rule.config?.min_similarity
+        ? Math.round(rule.config.min_similarity * 100)
+        : rule.confidence || 85;
+      return {
+        label: 'MATCH THRESHOLD (%)',
+        value: Number(val),
+        step: 1,
+        min: 50,
+        onChange: (newVal) => {
+          const newConfig = {
+            ...(rule.config || {}),
+            min_similarity: newVal / 100,
+          };
+          onUpdateRule({ ...rule, config: newConfig });
+        },
+      };
+    }
+    case 'threshold': {
+      let label = 'THRESHOLD';
+      if (rule.phase === 'short-pay') label = 'SHORTFALL TOLERANCE';
+      else if (rule.phase === 'unapplied') label = 'UNAPPLIED CASH THRESHOLD';
+      else if (rule.phase === 'gl-check') label = 'GL CONTROL VARIANCE TOLERANCE';
+      const rawVal = rule.config?.amount?.value_minor ?? rule.cond?.amount?.value ?? 0;
+      const val = typeof rawVal === 'number' && rawVal >= 100 ? rawVal / 100 : Number(rawVal);
+      return {
+        label,
+        value: val,
+        step: 0.1,
+        min: 0,
+        onChange: (newVal) => {
+          const minor = Math.round(newVal * 100);
+          const newConfig = {
+            ...(rule.config || {}),
+            amount: { mode: 'abs', value_minor: minor },
+          };
+          onUpdateRule({
+            ...rule,
+            config: newConfig,
+            cond: { ...(rule.cond || {}), amount: { mode: 'abs', value: minor } },
+          });
+        },
+      };
+    }
+    default:
+      return null;
+  }
+}
+
+const formatSecondSourceLabel = (s: string) => {
+  if (s.toLowerCase().includes('invoice') || s === 'invoice') return 'Sub-Ledger (Invoices)';
+  if (s.toLowerCase().includes('customer') || s === 'customer') return 'Customer Master';
+  if (s.toLowerCase().includes('remittance') || s.toLowerCase().includes('expected')) return 'Expected Remittances';
+  return humanizeField(s);
+};
 
 export const ARRuleEditor: React.FC<ARRuleEditorProps> = ({
   rule,
@@ -47,6 +195,8 @@ export const ARRuleEditor: React.FC<ARRuleEditorProps> = ({
   const handleChangeConfidence = (e: React.ChangeEvent<HTMLInputElement>) => {
     onUpdateRule({ ...rule, confidence: Number(e.target.value) });
   };
+
+  const paramConfig = getRuleParamConfig(rule, onUpdateRule);
 
   return (
     <div className="border-t border-slate-200 px-5 py-4 bg-slate-50/70 flex flex-col gap-4 text-xs fade-in">
@@ -109,14 +259,14 @@ export const ARRuleEditor: React.FC<ARRuleEditorProps> = ({
                 const newConfig = { ...(rule.config || {}), location: val, bankField: val };
                 onUpdateRule({ ...rule, bankField: val, config: newConfig });
               }}
-              className="bg-white border border-slate-200 rounded-lg px-3 h-9 font-medium text-[11.5px] text-slate-800 focus:outline-none focus:border-indigo-600 shadow-2xs"
+              className="bg-white border border-slate-200 rounded-lg px-3 h-9 font-medium text-[11.5px] text-slate-800 focus:outline-none focus:border-indigo-600 shadow-2xs min-w-35"
             >
-              <option value={bankField}>Bank {bankField}</option>
+              <option value={bankField}>{humanizeField(bankField)}</option>
               {bankFieldOptions
                 .filter((f) => f !== bankField)
                 .map((f) => (
                   <option key={f} value={f}>
-                    Bank {f}
+                    {humanizeField(f)}
                   </option>
                 ))}
             </select>
@@ -130,10 +280,10 @@ export const ARRuleEditor: React.FC<ARRuleEditorProps> = ({
                 const newConfig = { ...(rule.config || {}), source: val };
                 onUpdateRule({ ...rule, secondSource: val, config: newConfig });
               }}
-              className="bg-white border border-slate-200 rounded-lg px-3 h-9 font-medium text-[11.5px] text-slate-800 focus:outline-none focus:border-indigo-600 shadow-2xs"
+              className="bg-white border border-slate-200 rounded-lg px-3 h-9 font-medium text-[11.5px] text-slate-800 focus:outline-none focus:border-indigo-600 shadow-2xs min-w-40"
             >
-              <option value={secondSource}>{secondSource}</option>
-              <option value="Sub-Ledger (Invoice)">Sub-Ledger (Invoice)</option>
+              <option value={secondSource}>{formatSecondSourceLabel(secondSource)}</option>
+              <option value="Sub-Ledger (Invoices)">Sub-Ledger (Invoices)</option>
               <option value="Customer Master">Customer Master</option>
               <option value="Expected Remittances">Expected Remittances</option>
             </select>
@@ -145,14 +295,14 @@ export const ARRuleEditor: React.FC<ARRuleEditorProps> = ({
                 const newConfig = { ...(rule.config || {}), match_field: val };
                 onUpdateRule({ ...rule, secondField: val, config: newConfig });
               }}
-              className="bg-white border border-slate-200 rounded-lg px-3 h-9 font-mono text-[11.5px] text-slate-800 focus:outline-none focus:border-indigo-600 shadow-2xs"
+              className="bg-white border border-slate-200 rounded-lg px-3 h-9 font-mono text-[11.5px] text-slate-800 focus:outline-none focus:border-indigo-600 shadow-2xs min-w-40"
             >
-              <option value={secondField}>{secondField}</option>
+              <option value={secondField}>{humanizeField(secondField)}</option>
               {targetFieldOptions
                 .filter((f) => f !== secondField)
                 .map((f) => (
                   <option key={f} value={f}>
-                    {f}
+                    {humanizeField(f)}
                   </option>
                 ))}
             </select>
@@ -160,30 +310,52 @@ export const ARRuleEditor: React.FC<ARRuleEditorProps> = ({
         )}
       </div>
 
-      {/* Row 3: CONFIDENCE */}
-      {rule.confidence !== null && rule.confidence !== undefined && (
-        <div className="pt-2 border-t border-slate-200/80 space-y-1.5">
-          <div className="flex items-center gap-3">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex-none">
-              CONFIDENCE
-            </label>
-            <input
-              type="range"
-              min="50"
-              max="100"
-              value={rule.confidence}
-              onChange={handleChangeConfidence}
-              className="flex-1 max-w-xs accent-indigo-600 cursor-pointer h-1.5 bg-slate-200 rounded-lg"
-            />
-            <span className="font-mono text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200/60 px-2 py-0.5 rounded-md">
-              {rule.confidence}
-            </span>
-          </div>
-          <p className="text-[11px] text-slate-400">
-            How much to trust this match — at or above the auto-match threshold it applies automatically, below it's suggested for review.
-          </p>
+      {/* Row 3: TUNABLE PARAMETER & CONFIDENCE */}
+      <div className="pt-2 border-t border-slate-200/80 space-y-2">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+          {paramConfig ? (
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                {paramConfig.label}
+              </label>
+              <input
+                type="number"
+                step={paramConfig.step ?? 0.1}
+                min={paramConfig.min ?? 0}
+                value={paramConfig.value}
+                onChange={(e) => paramConfig.onChange(Number(e.target.value))}
+                className="w-full bg-white border border-slate-200 rounded-lg px-3 h-9 text-xs font-semibold text-slate-900 focus:outline-none focus:border-indigo-600 shadow-2xs"
+              />
+            </div>
+          ) : (
+            <div />
+          )}
+
+          {rule.confidence !== null && rule.confidence !== undefined && (
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                CONFIDENCE
+              </label>
+              <div className="flex items-center gap-3 h-9">
+                <input
+                  type="range"
+                  min="50"
+                  max="100"
+                  value={rule.confidence}
+                  onChange={handleChangeConfidence}
+                  className="flex-1 accent-indigo-600 cursor-pointer h-1.5 bg-slate-200 rounded-lg"
+                />
+                <span className="font-mono text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200/60 px-2.5 py-0.5 rounded-md flex-none">
+                  {rule.confidence}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+        <p className="text-[11px] text-slate-400">
+          How much to trust this match — at or above the auto-match threshold it applies automatically, below it's suggested for review.
+        </p>
+      </div>
     </div>
   );
 };

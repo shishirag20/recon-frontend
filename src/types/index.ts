@@ -350,7 +350,12 @@ export interface ExceptionOut {
   bank_txn_id: string | null;
   invoice_id: string | null;
   customer_id: string | null;
+  customer_name?: string | null;
+  customer_code?: string | null;
+  invoice_number?: string | null;
+  bank_reference?: string | null;
   discrepancy_minor: number | null;
+  amount_minor?: number | null;
   reason_code: string | null;
   status: 'OPEN' | 'INVESTIGATING' | 'RESOLVED' | 'AUTO_RESOLVED' | 'DEFERRED' | 'WRITTEN_OFF' | 'ADJUSTED' | 'CARRIED_FORWARD' | string;
   resolution_outcome: 'WRITEOFF' | 'KEEPOPEN' | 'DISPUTE' | 'JOURNAL' | 'ON_ACCOUNT' | string | null;

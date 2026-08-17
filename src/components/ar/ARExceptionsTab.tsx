@@ -47,14 +47,19 @@ interface KnownExceptionDetail {
   shortfall_minor?: number;
   tolerance_minor?: number;
   variance_minor?: number;
+  amount_minor?: number;
+  balance_due_minor?: number;
 }
 const exceptionDetail = (e: ExceptionOut): KnownExceptionDetail => (e.detail || {}) as KnownExceptionDetail;
 
 function exceptionAmountMinor(e: ExceptionOut): number | null {
   if (e.discrepancy_minor != null) return e.discrepancy_minor;
+  if (e.amount_minor != null) return e.amount_minor;
   const detail = exceptionDetail(e);
-  if (e.exception_type === 'SHORT_PAY') return detail.shortfall_minor ?? null;
-  if (e.exception_type === 'GL_VARIANCE') return detail.variance_minor ?? null;
+  if (detail.shortfall_minor != null) return detail.shortfall_minor;
+  if (detail.variance_minor != null) return detail.variance_minor;
+  if (detail.amount_minor != null) return detail.amount_minor;
+  if (detail.balance_due_minor != null) return detail.balance_due_minor;
   return null;
 }
 
@@ -111,6 +116,10 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ exceptions, ma
         const q = searchQuery.toLowerCase();
         return (
           (e.reason_code || '').toLowerCase().includes(q) ||
+          (e.customer_name || '').toLowerCase().includes(q) ||
+          (e.customer_code || '').toLowerCase().includes(q) ||
+          (e.invoice_number || '').toLowerCase().includes(q) ||
+          (e.bank_reference || '').toLowerCase().includes(q) ||
           (e.customer_id || '').toLowerCase().includes(q) ||
           e.exception_id.toLowerCase().includes(q)
         );
@@ -263,8 +272,16 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ exceptions, ma
                       }`}
                   >
                     <td className="px-4 py-4 align-middle">{renderBadge(e.exception_type)}</td>
-                    <td className="px-4 py-4 align-middle font-mono text-[11.5px] text-slate-700" title={e.customer_id ?? undefined}>
-                      {shortId(e.customer_id)}
+                    <td className="px-4 py-4 align-middle font-medium text-xs text-slate-800" title={e.customer_id ?? undefined}>
+                      {e.customer_name ? (
+                        <span className="font-semibold text-slate-900">{e.customer_name}</span>
+                      ) : e.customer_code ? (
+                        <span className="font-semibold text-slate-900">{e.customer_code}</span>
+                      ) : e.customer_id ? (
+                        <span className="font-mono text-[11.5px] text-slate-600">{shortId(e.customer_id)}</span>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-4 align-middle text-slate-600 font-normal leading-snug">
                       {e.reason_code || '—'}
@@ -302,6 +319,9 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ exceptions, ma
             <div>
               <div className="text-xs font-bold text-slate-900 flex items-center gap-2">
                 <span>Resolve Exception — {activeException.exception_no || shortId(activeException.exception_id)}</span>
+                {activeException.customer_name && (
+                  <span className="text-slate-600 font-medium">({activeException.customer_name})</span>
+                )}
                 {renderBadge(activeException.exception_type)}
               </div>
               <p className="text-[11.5px] text-slate-500 mt-0.5">

@@ -118,13 +118,7 @@ export const ARRulesStudioTab: React.FC = () => {
   };
 
   const handleToggleEditRule = (id: string) => {
-    setEditingRuleId((prev) => {
-      if (prev === id) {
-        toast('Rule saved successfully', 'ok');
-        return null;
-      }
-      return id;
-    });
+    setEditingRuleId((prev) => (prev === id ? null : id));
   };
 
   const handleToggleEnableRule = async (id: string) => {
@@ -189,8 +183,9 @@ export const ARRulesStudioTab: React.FC = () => {
     if (definitionId) {
       try {
         await arService.updateARRule(definitionId, updated);
+        toast('Rule saved successfully', 'ok');
       } catch {
-        // Best-effort
+        toast('Failed to save rule on server', 'bad');
       }
     }
   };
