@@ -261,9 +261,6 @@ export const ARMatchedTab: React.FC<ARMatchedTabProps> = ({ run, matches, except
                               </div>
                               <div className="font-semibold text-slate-900">{rupees(totalAllocated)}</div>
                             </div>
-                            <div className="text-[10.5px] text-slate-400 font-mono mt-1 text-center" title={paymentId ?? undefined}>
-                              pay: {shortId(paymentId)}
-                            </div>
                           </td>
                         )}
 
@@ -307,42 +304,42 @@ export const ARMatchedTab: React.FC<ARMatchedTabProps> = ({ run, matches, except
               No gateway settlement API yet — this stream has no backend support today.
             </div>
           ) : (
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                <th className="px-4 py-2.5">Settlement ID</th>
-                <th className="px-4 py-2.5">Gateway</th>
-                <th className="px-4 py-2.5">Txn Reference</th>
-                <th className="px-4 py-2.5 text-right">Gross</th>
-                <th className="px-4 py-2.5 text-right">Fee</th>
-                <th className="px-4 py-2.5 text-right">Net</th>
-                <th className="px-4 py-2.5 text-right">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {gatewaySettlements.map((gw: GatewaySettlement) => (
-                <tr key={gw.settlementId} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-4 py-3 font-semibold text-indigo-600">{gw.settlementId}</td>
-                  <td className="px-4 py-3 font-medium text-slate-900">{gw.gateway}</td>
-                  <td className="px-4 py-3 text-slate-600">{gw.transactionId}</td>
-                  <td className="px-4 py-3 text-right font-semibold text-slate-900">
-                    ₹{gw.grossAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                  </td>
-                  <td className="px-4 py-3 text-right text-slate-500">
-                    ₹{gw.feeAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                  </td>
-                  <td className="px-4 py-3 text-right font-semibold text-slate-900">
-                    ₹{gw.netAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 text-[11px] font-semibold border border-emerald-200">
-                      Settled
-                    </span>
-                  </td>
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  <th className="px-4 py-2.5">Settlement ID</th>
+                  <th className="px-4 py-2.5">Gateway</th>
+                  <th className="px-4 py-2.5">Txn Reference</th>
+                  <th className="px-4 py-2.5 text-right">Gross</th>
+                  <th className="px-4 py-2.5 text-right">Fee</th>
+                  <th className="px-4 py-2.5 text-right">Net</th>
+                  <th className="px-4 py-2.5 text-right">Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {gatewaySettlements.map((gw: GatewaySettlement) => (
+                  <tr key={gw.settlementId} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-4 py-3 font-semibold text-indigo-600">{gw.settlementId}</td>
+                    <td className="px-4 py-3 font-medium text-slate-900">{gw.gateway}</td>
+                    <td className="px-4 py-3 text-slate-600">{gw.transactionId}</td>
+                    <td className="px-4 py-3 text-right font-semibold text-slate-900">
+                      ₹{gw.grossAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-4 py-3 text-right text-slate-500">
+                      ₹{gw.feeAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-4 py-3 text-right font-semibold text-slate-900">
+                      ₹{gw.netAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 text-[11px] font-semibold border border-emerald-200">
+                        Settled
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
         </div>
       )}
