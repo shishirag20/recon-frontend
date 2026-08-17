@@ -60,12 +60,21 @@ export const ARWorkspacePage: React.FC = () => {
     };
   }, [refreshKey]);
 
-  const matchesCount = matches.length;
-  const exceptionsCount = exceptions.filter((e) => e.status === 'OPEN' || e.status === 'INVESTIGATING').length;
+  const shortPayMatchGroupIds = React.useMemo(
+    () => new Set(exceptions.filter((e) => e.exception_type === 'SHORT_PAY' && e.match_group_id).map((e) => e.match_group_id)),
+    [exceptions]
+  );
+  const displayedMatches = React.useMemo(
+    () => matches.filter((g) => !shortPayMatchGroupIds.has(g.match_group_id)),
+    [matches, shortPayMatchGroupIds]
+  );
+
+  const matchesCount = run?.matched_count ?? displayedMatches.length;
+  const exceptionsCount = run?.exception_count ?? exceptions.length;
 
   const tabs = [
-    { key: 'matches', label: 'Matched', badge: matchesCount > 0 ? matchesCount : undefined },
-    { key: 'exceptions', label: 'Exceptions', badge: exceptionsCount > 0 ? exceptionsCount : undefined },
+    { key: 'matches', label: 'Matched', badge: run ? matchesCount : (displayedMatches.length > 0 ? displayedMatches.length : undefined) },
+    { key: 'exceptions', label: 'Exceptions', badge: run ? exceptionsCount : (exceptions.length > 0 ? exceptions.length : undefined) },
     { key: 'rules', label: 'Rules Studio' },
   ];
 
