@@ -45,6 +45,7 @@ export const API_ROUTES = {
     FIELD_MAPPING_VERSIONS: (stream: string) => `/field-mappings/${stream}/versions`,
     FIELD_MAPPING_PREVIEW: (stream: string) => `/field-mappings/${stream}/preview`,
     FIELD_MAPPING_RESOLVE: (stream: string) => `/field-mappings/${stream}/resolve-headers`,
+    FIELD_MAPPING_RESOLVE_SCHEMA: (stream: string) => `/field-mappings/${stream}/resolve-schema`,
     FIELD_MAPPING_CANONICAL_FIELDS: (stream: string) => `/field-mappings/${stream}/canonical-fields`,
     INGESTION_JOBS: `/ingestion-jobs`,
     INGESTION_JOB: (id: string) => `/ingestion-jobs/${id}`,

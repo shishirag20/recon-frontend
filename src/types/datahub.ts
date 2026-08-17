@@ -95,6 +95,20 @@ export interface ResolvedHeader {
   matched: boolean;
 }
 
+export interface ResolvedFieldMapping {
+  source_field: string;
+  canonical_field: string | null;
+  transform: TransformType;
+  transform_param?: string | null;
+  is_matched: boolean;
+}
+
+export interface ResolveSchemaResponse {
+  stream: IngestionStream;
+  canonical_fields: string[];
+  mappings: ResolvedFieldMapping[];
+}
+
 // ── Mapping Preview ───────────────────────────────────────────────────────────
 
 export interface MappingPreviewRequest {
