@@ -310,8 +310,17 @@ export interface RunOut {
 export interface AllocationOut {
   allocation_id: string;
   invoice_id: string;
+  /** Real, human-readable invoice number - invoice_id is the internal row UUID. */
+  invoice_number: string | null;
+  /** The invoice's own total (what was owed) - not necessarily what this allocation actually applied. */
+  invoice_amount_minor: number | null;
   payment_id: string;
+  /** The payment's own total received - may exceed or fall short of allocated_minor (overpayment/short-pay/fee cases). */
+  payment_amount_minor: number | null;
   bank_txn_id: string | null;
+  /** Real bank reference/UTR from the source file - bank_txn_id is the internal generated row UUID. */
+  bank_reference: string | null;
+  /** How much of this payment was actually applied to this invoice. */
   allocated_minor: number;
 }
 

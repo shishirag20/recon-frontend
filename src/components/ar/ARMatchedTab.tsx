@@ -219,9 +219,13 @@ export const ARMatchedTab: React.FC<ARMatchedTabProps> = ({ run, matches, except
                 {matches.map((group, groupIdx) => {
                   const isGrouped = group.allocations.length > 1;
                   const isChecked = selectedMatches.includes(group.match_group_id);
-                  const paymentId = group.allocations[0]?.payment_id ?? null;
                   const bankTxnId = group.allocations[0]?.bank_txn_id ?? null;
-                  const totalAllocated = group.allocations.reduce((sum, a) => sum + a.allocated_minor, 0);
+                  const bankReference = group.allocations[0]?.bank_reference ?? null;
+                  // The payment's own total received - not the sum of what got
+                  // allocated, which under/overstates it for short-pay/overpay/fee
+                  // cases (every allocation in a group shares one payment, so the
+                  // first is enough).
+                  const paymentAmount = group.allocations[0]?.payment_amount_minor ?? null;
 
                   return group.allocations.map((a, idx) => {
                     const isFirst = idx === 0;
@@ -245,10 +249,13 @@ export const ARMatchedTab: React.FC<ARMatchedTabProps> = ({ run, matches, except
                         {/* Invoice column - accent border only when this payment settled >1 invoice */}
                         <td className={`px-4 py-3.5 align-middle ${isGrouped ? 'border-l-[3px] border-indigo-600' : ''}`}>
                           <div className="grid grid-cols-2 gap-3 text-center items-center font-medium text-[13px] text-slate-900">
-                            <div className="font-semibold text-slate-900 font-mono text-[12px]" title={a.invoice_id}>
-                              {shortId(a.invoice_id)}
+                            <div className="font-semibold text-slate-900" title={a.invoice_id}>
+                              {a.invoice_number || shortId(a.invoice_id)}
                             </div>
-                            <div className="font-semibold text-slate-900">{rupees(a.allocated_minor)}</div>
+                            {/* The invoice's own total (what was owed), not the
+                                allocated cash - they diverge on short-pay/overpay/fee
+                                matches, which is exactly what this column should show. */}
+                            <div className="font-semibold text-slate-900">{rupees(a.invoice_amount_minor)}</div>
                           </div>
                         </td>
 
@@ -256,11 +263,14 @@ export const ARMatchedTab: React.FC<ARMatchedTabProps> = ({ run, matches, except
                         {isFirst && (
                           <td rowSpan={group.allocations.length} className="px-4 py-3.5 align-middle border-x border-slate-200">
                             <div className="grid grid-cols-2 gap-3 text-center items-center font-medium text-[13px] text-slate-900">
-                              <div className="font-semibold text-slate-900 font-mono text-[12px]" title={bankTxnId ?? undefined}>
-                                {shortId(bankTxnId)}
+                              <div className="font-semibold text-slate-900" title={bankTxnId ?? undefined}>
+                                {bankReference || shortId(bankTxnId)}
                               </div>
-                              <div className="font-semibold text-slate-900">{rupees(totalAllocated)}</div>
+                              {/* The payment's own total received, not the sum of what
+                                  got allocated across its invoice(s). */}
+                              <div className="font-semibold text-slate-900">{rupees(paymentAmount)}</div>
                             </div>
+                            
                           </td>
                         )}
 
