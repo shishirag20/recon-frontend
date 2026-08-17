@@ -64,6 +64,20 @@ export const ARMatchedTab: React.FC<ARMatchedTabProps> = ({ run, matches, except
 
   const gatewaySettlements: GatewaySettlement[] = arResult?.gatewaySettlements || [];
 
+  // Matches the prototype exactly (index copy.html keeps `shortPays` as a
+  // separate array from `matches`/`overpays`, and arMatchedTable only ever
+  // reads the latter two): real cash was applied and the match_group is a
+  // legitimate audit record, but a short-paid invoice isn't "done" - it
+  // belongs in Exceptions, not alongside clean matches here.
+  const shortPayMatchGroupIds = useMemo(
+    () => new Set(exceptions.filter((e) => e.exception_type === 'SHORT_PAY' && e.match_group_id).map((e) => e.match_group_id)),
+    [exceptions]
+  );
+  const displayedMatches = useMemo(
+    () => matches.filter((g) => !shortPayMatchGroupIds.has(g.match_group_id)),
+    [matches, shortPayMatchGroupIds]
+  );
+
   // Real GL control proof result (M3) - a GL_VARIANCE exception carries the
   // sub-ledger/GL/variance figures directly in `detail`. No exception of
   // that type in this run's list means the control proof found no
@@ -103,7 +117,7 @@ export const ARMatchedTab: React.FC<ARMatchedTabProps> = ({ run, matches, except
               }`}
           >
             Invoice vs Bank Payments{' '}
-            <span className="font-mono text-[11px] opacity-70">({matches.length})</span>
+            <span className="font-mono text-[11px] opacity-70">({displayedMatches.length})</span>
           </button>
 
           <button
@@ -178,7 +192,7 @@ export const ARMatchedTab: React.FC<ARMatchedTabProps> = ({ run, matches, except
             </div>
           ) : loading ? (
             <div className="p-10 text-center text-xs text-slate-500">Loading matches…</div>
-          ) : matches.length === 0 ? (
+          ) : displayedMatches.length === 0 ? (
             <div className="p-10 text-center text-xs text-slate-500">
               No matches in run {run.run_no} — every payment either has an open exception or nothing has been ingested yet.
             </div>
@@ -216,7 +230,7 @@ export const ARMatchedTab: React.FC<ARMatchedTabProps> = ({ run, matches, except
                 </tr>
               </thead>
               <tbody>
-                {matches.map((group, groupIdx) => {
+                {displayedMatches.map((group, groupIdx) => {
                   const isGrouped = group.allocations.length > 1;
                   const isChecked = selectedMatches.includes(group.match_group_id);
                   const bankTxnId = group.allocations[0]?.bank_txn_id ?? null;
