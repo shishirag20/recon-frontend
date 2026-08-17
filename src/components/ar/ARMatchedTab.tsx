@@ -204,7 +204,7 @@ export const ARMatchedTab: React.FC<ARMatchedTabProps> = ({ run, matches, except
                   <th className="px-4 py-2 font-bold">
                     <div className="grid grid-cols-2 gap-3 text-center">
                       <div>Invoice</div>
-                      <div>Allocated</div>
+                      <div>Amount</div>
                     </div>
                   </th>
                   <th className="px-4 py-2 font-bold border-x border-slate-200">
