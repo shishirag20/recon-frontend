@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { reconciliationsService } from '../../services/reconciliations.service';
 import { arService } from '../../services/ar.service';
 import { Button } from '../ui/Button';
+import { ExceptionTypeBadge, exceptionTypeLabel } from '../ui/ExceptionTypeBadge';
 import { Search, Check, X } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
 import { RULE_METADATA } from './ARRuleCard';
@@ -22,19 +23,26 @@ interface ARExceptionsTabProps {
   onResolved: () => void;
 }
 
-// exception_type -> display label + badge color. Every value here is a
-// real constants.EXCEPTION_TYPES entry the backend can actually raise
-// today (see docs/reconciliation.md §8 / the invoice-flow-example doc's
-// reference table) - not a superset of hypothetical future types.
-const TYPE_META: Record<string, { label: string; badgeClass: string }> = {
-  SHORT_PAY: { label: 'Short-Pay', badgeClass: 'bg-rose-50 text-rose-700 border-rose-200' },
-  SUSPENSE: { label: 'Suspense', badgeClass: 'bg-amber-50 text-amber-700 border-amber-200' },
-  DOUBLE_COLLISION: { label: 'Double Collision', badgeClass: 'bg-rose-50 text-rose-700 border-rose-200' },
-  MULTIPLE_INVOICE_MATCH: { label: 'Multiple Invoice Match', badgeClass: 'bg-amber-50 text-amber-700 border-amber-200' },
-  UNAPPLIED_CASH: { label: 'Unapplied Cash', badgeClass: 'bg-amber-50 text-amber-700 border-amber-200' },
-  NO_PAYMENT: { label: 'No Payment Received', badgeClass: 'bg-rose-50 text-rose-700 border-rose-200' },
-  GL_VARIANCE: { label: 'GL Variance', badgeClass: 'bg-rose-50 text-rose-700 border-rose-200' },
-  DUPLICATE: { label: 'Duplicate', badgeClass: 'bg-slate-100 text-slate-700 border-slate-200' },
+// Real exception_type values the backend can actually raise that this tab
+// offers as filter options (see docs/reconciliation.md §8). Colors and
+// display labels live in one place - ExceptionTypeBadge - not here.
+const FILTERABLE_EXCEPTION_TYPES = [
+  'SHORT_PAY', 'SUSPENSE', 'DOUBLE_COLLISION', 'MULTIPLE_INVOICE_MATCH',
+  'UNAPPLIED_CASH', 'NO_PAYMENT', 'GL_VARIANCE', 'DUPLICATE',
+  'BANK_CHARGE', 'OVERPAYMENT', 'TIMING_DIFFERENCE', 'GATEWAY_VARIANCE',
+] as const;
+
+// exception status -> plain-language label, so the inbox table and any
+// future status display never show a raw backend enum to the analyst.
+const STATUS_LABELS: Record<string, string> = {
+  OPEN: 'Open',
+  INVESTIGATING: 'Investigating',
+  RESOLVED: 'Resolved',
+  AUTO_RESOLVED: 'Auto-Resolved',
+  DEFERRED: 'Deferred',
+  WRITTEN_OFF: 'Written Off',
+  ADJUSTED: 'Adjusted',
+  CARRIED_FORWARD: 'Carried Forward',
 };
 
 const rupees = (minor: number | null | undefined) =>
@@ -59,6 +67,16 @@ interface KnownExceptionDetail {
   suggested_customer_id?: string;
   suggested_invoice_ids?: string[];
   candidate_customer_ids?: string[];
+  /** GL_VARIANCE - see gl_posting.py's control-account proof. */
+  sub_ledger_balance_minor?: number;
+  gl_control_balance_minor?: number;
+  /** DOUBLE_COLLISION - the 2+ customers a pooled payment matched cleanly
+   * for, per engine.py's Double-Collision branch. */
+  candidates?: { customer_id: string; customer_name?: string | null }[];
+  /** MULTIPLE_INVOICE_MATCH - the tied invoice_ids, per allocation.py's
+   * ambiguous-tie-break path; customer_name is set there too. */
+  invoice_ids?: string[];
+  customer_name?: string;
 }
 const exceptionDetail = (e: ExceptionOut): KnownExceptionDetail => (e.detail || {}) as KnownExceptionDetail;
 
@@ -408,15 +426,6 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ run, exception
     }
   };
 
-  const renderBadge = (type: string) => {
-    const meta = TYPE_META[type] || { label: type, badgeClass: 'bg-slate-100 text-slate-700 border-slate-200' };
-    return (
-      <span className={`px-2.5 py-0.5 rounded-md text-[11px] font-semibold border ${meta.badgeClass}`}>
-        {meta.label}
-      </span>
-    );
-  };
-
   const isResolvedStatus = (status: string) =>
     status === 'RESOLVED' || status === 'AUTO_RESOLVED' || status === 'WRITTEN_OFF' || status === 'ADJUSTED' || status === 'CARRIED_FORWARD';
 
@@ -441,8 +450,8 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ run, exception
           className="h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-900 focus:outline-none focus:border-indigo-600 shadow-xs min-w-47.5"
         >
           <option value="all">All Exception Types ({exceptions.length})</option>
-          {Object.entries(TYPE_META).map(([type, meta]) => (
-            <option key={type} value={type}>{meta.label}</option>
+          {FILTERABLE_EXCEPTION_TYPES.map((type) => (
+            <option key={type} value={type}>{exceptionTypeLabel(type)}</option>
           ))}
         </select>
 
@@ -499,7 +508,7 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ run, exception
                     className={`cursor-pointer transition-colors ${isSelected ? 'bg-indigo-50/60 font-medium' : 'hover:bg-slate-50/80'
                       }`}
                   >
-                    <td className="px-4 py-4 align-middle">{renderBadge(e.exception_type)}</td>
+                    <td className="px-4 py-4 align-middle"><ExceptionTypeBadge type={e.exception_type} /></td>
                     <td className="px-4 py-4 align-middle font-medium text-xs text-slate-800" title={e.customer_id ?? undefined}>
                       {e.customer_name ? (
                         <span className="font-semibold text-slate-900">{e.customer_name}</span>
@@ -527,7 +536,7 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ run, exception
                           : 'bg-rose-50 text-rose-700 border border-rose-200'
                           }`}
                       >
-                        {e.status}
+                        {STATUS_LABELS[e.status] || e.status}
                       </span>
                     </td>
                   </tr>
@@ -550,7 +559,7 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ run, exception
                 {activeException.customer_name && (
                   <span className="text-slate-600 font-medium">({activeException.customer_name})</span>
                 )}
-                {renderBadge(activeException.exception_type)}
+                <ExceptionTypeBadge type={activeException.exception_type} />
               </div>
               <p className="text-[11.5px] text-slate-500 mt-0.5">
                 {activeException.reason_code}
@@ -630,7 +639,7 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ run, exception
                       />
                       <div>
                         <div className="text-xs font-bold text-slate-900">Write off the shortfall</div>
-                        <div className="text-[11px] text-slate-500">status → WRITTEN_OFF, resolution_outcome → WRITEOFF</div>
+                        <div className="text-[11px] text-slate-500">Closes the invoice — the shortfall won't be chased further</div>
                       </div>
                     </label>
 
@@ -644,7 +653,7 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ run, exception
                       />
                       <div>
                         <div className="text-xs font-bold text-slate-900">Keep invoice open for balance follow-up</div>
-                        <div className="text-[11px] text-slate-500">status → INVESTIGATING, resolution_outcome → KEEPOPEN</div>
+                        <div className="text-[11px] text-slate-500">Invoice stays open until the remaining balance is collected</div>
                       </div>
                     </label>
 
@@ -658,7 +667,7 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ run, exception
                       />
                       <div>
                         <div className="text-xs font-bold text-slate-900">Mark as customer dispute</div>
-                        <div className="text-[11px] text-slate-500">status → INVESTIGATING, resolution_outcome → DISPUTE</div>
+                        <div className="text-[11px] text-slate-500">Flags this as a customer dispute for follow-up</div>
                       </div>
                     </label>
                   </div>
@@ -973,8 +982,128 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ run, exception
               );
             })()}
 
+            {/* Panel: GL Variance - sub-ledger vs GL control balance, same
+                3-column summary ARMatchedTab's GL stream uses, real fields
+                from gl_posting.py's control-account proof. */}
+            {activeException.exception_type === 'GL_VARIANCE' && (
+              <div className="space-y-4">
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 grid grid-cols-3 gap-4 text-center">
+                  <div>
+                    <div className="text-[10.5px] font-bold text-slate-400 uppercase">AR Sub-ledger</div>
+                    <div className="text-sm font-bold text-slate-900 mt-1">
+                      {rupees(exceptionDetail(activeException).sub_ledger_balance_minor)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10.5px] font-bold text-slate-400 uppercase">GL Control Account</div>
+                    <div className="text-sm font-bold text-slate-900 mt-1">
+                      {rupees(exceptionDetail(activeException).gl_control_balance_minor)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10.5px] font-bold text-rose-600 uppercase">Variance</div>
+                    <div className="text-sm font-bold text-rose-700 mt-1">
+                      {rupees(exceptionDetail(activeException).variance_minor)}
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                    Resolution Note
+                  </label>
+                  <textarea
+                    value={resolutionNote}
+                    onChange={(e) => setResolutionNote(e.target.value)}
+                    placeholder="Enter audit note for this GL adjustment..."
+                    className="w-full bg-white border border-slate-200 rounded-lg p-3 text-xs font-medium text-slate-900 h-16 resize-none focus:outline-none focus:border-indigo-600"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Panel: Double Collision - 2+ candidates each produced a valid
+                match for the same pooled payment, per engine.py; shows every
+                candidate side by side instead of a raw JSON candidates array. */}
+            {activeException.exception_type === 'DOUBLE_COLLISION' && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                    {(exceptionDetail(activeException).candidates?.length ?? 0)} candidates tied on {rupees(exceptionAmountMinor(activeException))}
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    {(exceptionDetail(activeException).candidates ?? []).map((c) => (
+                      <div key={c.customer_id} className="p-3 bg-white border border-slate-200 rounded-lg">
+                        <div className="text-xs font-bold text-slate-900">{c.customer_name || shortId(c.customer_id)}</div>
+                        <div className="text-sm font-mono font-bold text-rose-700 mt-1">
+                          {rupees(exceptionAmountMinor(activeException))}
+                        </div>
+                        <div className="text-[10px] font-mono text-slate-400 mt-1">{shortId(c.customer_id)}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-2">
+                    Both produced a clean match — pick the correct customer to resolve, or route to Suspense if neither is confirmed.
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                    Resolution Note
+                  </label>
+                  <textarea
+                    value={resolutionNote}
+                    onChange={(e) => setResolutionNote(e.target.value)}
+                    placeholder="Which customer this payment actually belongs to, and why..."
+                    className="w-full bg-white border border-slate-200 rounded-lg p-3 text-xs font-medium text-slate-900 h-16 resize-none focus:outline-none focus:border-indigo-600"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Panel: Multiple Invoice Match - same customer, 2+ open invoices
+                tied on amount, per allocation.py's ambiguous tie-break. */}
+            {activeException.exception_type === 'MULTIPLE_INVOICE_MATCH' && (
+              <div className="space-y-4">
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
+                  <div>
+                    <div className="text-[13px] font-semibold text-slate-900">
+                      {exceptionDetail(activeException).customer_name || activeException.customer_name || 'Unknown customer'}
+                    </div>
+                    <div className="text-[11.5px] text-slate-500">{activeException.reason_code}</div>
+                  </div>
+                  <div className="text-right font-mono text-[13px] font-semibold text-slate-900">
+                    {rupees(exceptionAmountMinor(activeException))}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                    {(exceptionDetail(activeException).invoice_ids?.length ?? 0)} invoices tied on balance due
+                  </label>
+                  <div className="border border-slate-200 rounded-lg bg-white divide-y divide-slate-100">
+                    {(exceptionDetail(activeException).invoice_ids ?? []).map((id) => (
+                      <div key={id} className="px-3 py-2.5 flex items-center justify-between">
+                        <span className="font-mono text-[11.5px] text-slate-700">{shortId(id)}</span>
+                        <span className="text-[10.5px] text-slate-400">tie candidate</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                    Resolution Note
+                  </label>
+                  <textarea
+                    value={resolutionNote}
+                    onChange={(e) => setResolutionNote(e.target.value)}
+                    placeholder="Which invoice this payment actually settles, and why..."
+                    className="w-full bg-white border border-slate-200 rounded-lg p-3 text-xs font-medium text-slate-900 h-16 resize-none focus:outline-none focus:border-indigo-600"
+                  />
+                </div>
+              </div>
+            )}
+
             {/* Panel: every other exception type - raw detail JSON, generic resolve */}
-            {activeException.exception_type !== 'SHORT_PAY' && activeException.exception_type !== 'NO_PAYMENT' && activeException.exception_type !== 'SUSPENSE' && (
+            {activeException.exception_type !== 'SHORT_PAY' && activeException.exception_type !== 'NO_PAYMENT' && activeException.exception_type !== 'SUSPENSE'
+              && activeException.exception_type !== 'GL_VARIANCE' && activeException.exception_type !== 'DOUBLE_COLLISION' && activeException.exception_type !== 'MULTIPLE_INVOICE_MATCH' && (
               <div className="space-y-4">
                 <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700">
                   <div className="font-semibold text-slate-900 mb-1">Reason</div>

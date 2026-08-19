@@ -19,6 +19,7 @@ interface MappingRow {
   source_field: string;
   canonical_field: string;
   transform: TransformType;
+  transform_param: string;
   isNew?: boolean; // present in the uploaded file's headers but not in the active mapping
 }
 
@@ -43,6 +44,17 @@ const TRANSFORM_OPTIONS: { value: TransformType; label: string }[] = [
   { value: 'CONST', label: 'Constant Value' },
   { value: 'REGEX', label: 'Regex Extract' },
 ];
+
+// Which transforms read `transform_param`, and what it means for each -
+// mirrors app/datahub/transforms.py::apply_transform. Shown as an inline
+// input beneath the transform select; omitted entirely for transforms that
+// ignore the param (NONE/TRIM/UPPER/LOWER/NEGATE).
+const TRANSFORM_PARAM_PLACEHOLDER: Partial<Record<TransformType, string>> = {
+  CONST: 'Constant value, e.g. INR',
+  TO_MINOR_UNITS: 'Multiplier (default 100) or "negate"',
+  PARSE_DATE: 'Formats, e.g. %Y-%m-%d,%m/%d/%y',
+  REGEX: 'Pattern with one capture group',
+};
 
 export const FieldMappingTransformModal: React.FC<FieldMappingTransformModalProps> = ({
   isOpen,
@@ -88,6 +100,7 @@ export const FieldMappingTransformModal: React.FC<FieldMappingTransformModalProp
             source_field: m.source_field,
             canonical_field: m.canonical_field || '',
             transform: (m.transform || 'NONE') as TransformType,
+            transform_param: m.transform_param || '',
             isNew: !m.is_matched,
           }));
 
@@ -106,6 +119,7 @@ export const FieldMappingTransformModal: React.FC<FieldMappingTransformModalProp
               source_field: m.source_field,
               canonical_field: m.canonical_field || '',
               transform: (m.transform || 'NONE') as TransformType,
+              transform_param: m.transform_param || '',
               isNew: false,
             }))
           );
@@ -134,7 +148,7 @@ export const FieldMappingTransformModal: React.FC<FieldMappingTransformModalProp
       'new_column';
     setRows((prev) => [
       ...prev,
-      { id: newId, source_field: unusedHeader, canonical_field: '', transform: 'NONE' },
+      { id: newId, source_field: unusedHeader, canonical_field: '', transform: 'NONE', transform_param: '' },
     ]);
   };
 
@@ -204,6 +218,7 @@ export const FieldMappingTransformModal: React.FC<FieldMappingTransformModalProp
             source_field: src,
             canonical_field: canon,
             transform: r.transform,
+            transform_param: r.transform_param.trim() || null,
           });
         }
       }
@@ -318,7 +333,7 @@ export const FieldMappingTransformModal: React.FC<FieldMappingTransformModalProp
                     </div>
 
                     {/* Transform Dropdown */}
-                    <div className="col-span-3">
+                    <div className="col-span-3 space-y-1">
                       <select
                         value={row.transform}
                         onChange={(e) =>
@@ -330,6 +345,15 @@ export const FieldMappingTransformModal: React.FC<FieldMappingTransformModalProp
                           <option key={t.value} value={t.value}>{t.label}</option>
                         ))}
                       </select>
+                      {TRANSFORM_PARAM_PLACEHOLDER[row.transform] && (
+                        <input
+                          type="text"
+                          value={row.transform_param}
+                          onChange={(e) => handleRowChange(row.id, 'transform_param', e.target.value)}
+                          placeholder={TRANSFORM_PARAM_PLACEHOLDER[row.transform]}
+                          className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1 text-[11px] text-slate-600 focus:outline-none focus:border-indigo-500"
+                        />
+                      )}
                     </div>
 
                     {/* Delete Action Button */}

@@ -332,6 +332,8 @@ export interface MatchGroupOut {
   rule_id: string | null;
   /** The CUSTOMER_LOCK-phase rule that identified the payment's customer. */
   locked_by_rule_id: string | null;
+  /** The "Invoice Number in Narration" cross-check rule - set only when it found a narration-referenced invoice and confirmed it belongs to the locked customer. */
+  narration_crosscheck_rule_id: string | null;
   confidence: number | null;
   status: 'AUTO_MATCHED' | 'SUGGESTED' | 'CONFIRMED' | 'REJECTED' | string;
   reason: string | null;

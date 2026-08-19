@@ -302,6 +302,12 @@ export const ARMatchedTab: React.FC<ARMatchedTabProps> = ({ run, matches, except
                                 <span className="text-slate-400"> · customer lock</span>
                               </div>
                             )}
+                            {group.narration_crosscheck_rule_id && (
+                              <div className="text-[12.5px] text-slate-800">
+                                <span className="font-semibold text-slate-900">{ruleLabel(group.narration_crosscheck_rule_id)}</span>
+                                <span className="text-slate-400"> · confirmed</span>
+                              </div>
+                            )}
                             <div className="text-[12.5px] text-slate-800">
                               <span className="font-semibold text-slate-900">{ruleLabel(group.rule_id)}</span>
                               {group.reason && (
