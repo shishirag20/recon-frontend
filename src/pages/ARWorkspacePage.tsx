@@ -3,65 +3,78 @@ import { useNavigate } from 'react-router-dom';
 import { Topbar } from '../components/layout/Topbar';
 import { TabBar } from '../components/layout/TabBar';
 import { Button } from '../components/ui/Button';
-import { ChevronLeft, Play, CheckCircle2 } from 'lucide-react';
+import { ChevronLeft } from 'lucide-react';
 import { ARMatchedTab } from '../components/ar/ARMatchedTab';
 import { ARRulesStudioTab } from '../components/ar/ARRulesStudioTab';
 import { ARExceptionsTab } from '../components/ar/ARExceptionsTab';
-import { useToast } from '../hooks/useToast';
-import { arService } from '../services/ar.service';
-import type { AREngineResult } from '../types';
+import { reconciliationsService } from '../services/reconciliations.service';
+import type { RunOut, MatchGroupOut, ExceptionOut } from '../types';
 
 export const ARWorkspacePage: React.FC = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<string>('matches');
-  const [isFinished, setIsFinished] = useState<boolean>(false);
-  const [arData, setArData] = useState<AREngineResult | null>(null);
-  const { toast } = useToast();
+  const [run, setRun] = useState<RunOut | null>(null);
+  const [matches, setMatches] = useState<MatchGroupOut[]>([]);
+  const [exceptions, setExceptions] = useState<ExceptionOut[]>([]);
+  const [loading, setLoading] = useState(true);
+  // Bumped by `refetch` (passed to ARExceptionsTab as onResolved) to
+  // re-trigger the effect below - the fetch itself stays inline in the
+  // effect body (not a separately-called useCallback) so eslint's
+  // set-state-in-effect check can see it's the effect's own synchronization
+  // logic, not an arbitrary external function call.
+  const [refreshKey, setRefreshKey] = useState(0);
+  const refetch = () => setRefreshKey((k) => k + 1);
 
+  // Loads the latest run for this AR definition, then its matches/exceptions
+  // in parallel - the single source of truth both tabs render from, so a
+  // resolved exception or a freshly-completed run only needs one refetch
+  // here rather than each tab independently guessing which run to show.
   useEffect(() => {
     let cancelled = false;
-    const fetchAR = async () => {
+    (async () => {
       try {
-        const result = await arService.getARReconciliation('rec-ar-001');
-        if (!cancelled) {
-          setArData(result);
+        const latestRun = await reconciliationsService.getLatestRun();
+        if (cancelled) return;
+        setRun(latestRun);
+        if (latestRun) {
+          const [m, e] = await Promise.all([
+            reconciliationsService.getMatches(latestRun.run_id),
+            reconciliationsService.getExceptions(latestRun.run_id),
+          ]);
+          if (cancelled) return;
+          setMatches(m);
+          setExceptions(e);
+        } else {
+          setMatches([]);
+          setExceptions([]);
         }
       } catch {
-        // Fallback silently if offline
+        // Leave whatever was already loaded in place; tabs show their own
+        // empty state rather than a page-level error.
+      } finally {
+        if (!cancelled) setLoading(false);
       }
+    })();
+    return () => {
+      cancelled = true;
     };
-    fetchAR();
-    return () => { cancelled = true; };
-  }, []);
+  }, [refreshKey]);
 
-  const handleRunReconciliation = async () => {
-    toast('Executing AR Reconciliation engine...', 'ok');
-    try {
-      const result = await arService.getARReconciliation('rec-ar-001');
-      setArData(result);
-      toast('Reconciliation run completed.', 'ok');
-    } catch {
-      toast('Reconciliation engine execution triggered.', 'ok');
-    }
-  };
+  const shortPayMatchGroupIds = React.useMemo(
+    () => new Set(exceptions.filter((e) => e.exception_type === 'SHORT_PAY' && e.match_group_id).map((e) => e.match_group_id)),
+    [exceptions]
+  );
+  const displayedMatches = React.useMemo(
+    () => matches.filter((g) => !shortPayMatchGroupIds.has(g.match_group_id)),
+    [matches, shortPayMatchGroupIds]
+  );
 
-  const handleFinishReconciliation = async () => {
-    try {
-      await arService.finishReconciliation('rec-ar-001', 'Alex Rivera');
-      setIsFinished(true);
-      toast('Reconciliation signed off and marked as Finished.', 'ok');
-    } catch {
-      setIsFinished(true);
-      toast('Reconciliation signed off.', 'ok');
-    }
-  };
-
-  const matchesCount = arData ? (arData.matches || []).length : 0;
-  const exceptionsCount = arData ? (arData.exceptions || []).filter((e) => e.status === 'Open').length : 0;
+  const matchesCount = run?.matched_count ?? displayedMatches.length;
+  const exceptionsCount = run?.exception_count ?? exceptions.length;
 
   const tabs = [
-    { key: 'matches', label: 'Matched', badge: matchesCount > 0 ? matchesCount : undefined },
-    { key: 'exceptions', label: 'Exceptions', badge: exceptionsCount > 0 ? exceptionsCount : undefined },
+    { key: 'matches', label: 'Matched', badge: run ? matchesCount : (displayedMatches.length > 0 ? displayedMatches.length : undefined) },
+    { key: 'exceptions', label: 'Exceptions', badge: run ? exceptionsCount : (exceptions.length > 0 ? exceptions.length : undefined) },
     { key: 'rules', label: 'Rules Studio' },
   ];
 
@@ -70,7 +83,7 @@ export const ARWorkspacePage: React.FC = () => {
       {/* Top Header */}
       <Topbar
         title="Accounts Receivable (AR) Reconciliation"
-        subtitle={`July 2026 · Alex Rivera ${isFinished ? '· Signed off' : ''}`}
+        subtitle={run ? `${run.run_no} · ${run.status}` : 'No run yet'}
         actions={
           <div className="flex items-center gap-2">
             <Button
@@ -81,31 +94,6 @@ export const ARWorkspacePage: React.FC = () => {
             >
               Category View
             </Button>
-
-            {isFinished ? (
-              <span className="px-3 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200 flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                Reconciliation finished
-              </span>
-            ) : (
-              <>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleFinishReconciliation}
-                  className="border border-slate-200"
-                >
-                  Finish reconciliation
-                </Button>
-                <Button
-                  variant="primary"
-                  icon={Play}
-                  onClick={handleRunReconciliation}
-                >
-                  Run reconciliation
-                </Button>
-              </>
-            )}
           </div>
         }
       />
@@ -121,11 +109,15 @@ export const ARWorkspacePage: React.FC = () => {
 
       {/* Workspace Tab Body Content */}
       <div className="flex-1 overflow-y-auto">
-        {activeTab === 'matches' && <ARMatchedTab />}
+        {activeTab === 'matches' && (
+          <ARMatchedTab run={run} matches={matches} exceptions={exceptions} loading={loading} />
+        )}
 
         {activeTab === 'rules' && <ARRulesStudioTab />}
 
-        {activeTab === 'exceptions' && <ARExceptionsTab />}
+        {activeTab === 'exceptions' && (
+          <ARExceptionsTab run={run} exceptions={exceptions} matches={matches} loading={loading} onResolved={refetch} />
+        )}
       </div>
     </div>
   );

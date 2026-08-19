@@ -19,6 +19,7 @@ import type {
   MappingPreviewRequest,
   MappingPreviewResponse,
   ResolvedHeader,
+  ResolveMappingResponse,
   IngestionJobOut,
   CanonicalRecordOut,
   CanonicalRecordUpdate,
@@ -100,6 +101,13 @@ export const fieldMappingService = {
       { columns }
     );
     return res.results;
+  },
+
+  async resolveMapping(stream: string, headers: string[]): Promise<ResolveMappingResponse> {
+    return api.post<ResolveMappingResponse>(
+      API_ROUTES.DATA_HUB.FIELD_MAPPING_RESOLVE_MAPPING(stream),
+      { headers }
+    );
   },
 
   async canonicalFields(stream: string, forceRefresh = false): Promise<string[]> {

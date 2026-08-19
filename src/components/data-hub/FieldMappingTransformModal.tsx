@@ -19,6 +19,7 @@ interface MappingRow {
   source_field: string;
   canonical_field: string;
   transform: TransformType;
+  transform_param: string;
   isNew?: boolean; // present in the uploaded file's headers but not in the active mapping
 }
 
@@ -44,6 +45,17 @@ const TRANSFORM_OPTIONS: { value: TransformType; label: string }[] = [
   { value: 'REGEX', label: 'Regex Extract' },
 ];
 
+// Which transforms read `transform_param`, and what it means for each -
+// mirrors app/datahub/transforms.py::apply_transform. Shown as an inline
+// input beneath the transform select; omitted entirely for transforms that
+// ignore the param (NONE/TRIM/UPPER/LOWER/NEGATE).
+const TRANSFORM_PARAM_PLACEHOLDER: Partial<Record<TransformType, string>> = {
+  CONST: 'Constant value, e.g. INR',
+  TO_MINOR_UNITS: 'Multiplier (default 100) or "negate"',
+  PARSE_DATE: 'Formats, e.g. %Y-%m-%d,%m/%d/%y',
+  REGEX: 'Pattern with one capture group',
+};
+
 export const FieldMappingTransformModal: React.FC<FieldMappingTransformModalProps> = ({
   isOpen,
   onClose,
@@ -54,6 +66,7 @@ export const FieldMappingTransformModal: React.FC<FieldMappingTransformModalProp
   onConfirmMapping,
 }) => {
   const [rows, setRows] = useState<MappingRow[]>([]);
+  const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
   const [canonicalFieldOptions, setCanonicalFieldOptions] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -62,73 +75,55 @@ export const FieldMappingTransformModal: React.FC<FieldMappingTransformModalProp
     if (!isOpen) return;
 
     let cancelled = false;
-    // Case/whitespace-insensitive key, mirroring the backend's
-    // normalize_header() (app/datahub/transforms.py) - kept in sync manually
-    // since it's a stable one-liner, not worth a round trip to duplicate.
-    const normalizeHeader = (s: string) => s.trim().toLowerCase();
 
     const load = async () => {
       setIsLoading(true);
       try {
-        // The stream's full synonym dictionary (shared globally per stream -
-        // see migration 0026). Every row here, not just the ones relevant to
-        // this file - filtered down below once we know the file's headers.
-        const [mappings, fields] = await Promise.all([
-          fieldMappingService.getActive(stream),
-          fieldMappingService.canonicalFields(stream),
-        ]);
-        if (cancelled) return;
-        setCanonicalFieldOptions(fields);
+        let headers: string[] = [];
+        try {
+          headers = await readCsvHeaders(file);
+        } catch {
+          headers = [];
+        }
 
-        const toRows = (list: typeof mappings): MappingRow[] =>
-          list.map((m, idx) => ({
-            id: m.mapping_id || `map-${idx}`,
+        if (cancelled) return;
+        setCsvHeaders(headers);
+
+        if (headers.length > 0) {
+          const res = await fieldMappingService.resolveMapping(stream, headers);
+          if (cancelled) return;
+
+          setCanonicalFieldOptions(res.canonical_fields || []);
+
+          const modalRows: MappingRow[] = res.mappings.map((m, idx) => ({
+            id: `map-${idx}-${m.source_field}`,
             source_field: m.source_field,
-            canonical_field: m.canonical_field,
-            transform: m.transform || 'NONE',
+            canonical_field: m.canonical_field || '',
+            transform: (m.transform || 'NONE') as TransformType,
+            transform_param: m.transform_param || '',
+            isNew: !m.is_matched,
           }));
 
-        // Filter the full dictionary down to what's actually relevant to this
-        // file: a row whose source_field appears (normalized) among the
-        // file's real headers, or a CONST row - CONST ignores the raw value
-        // entirely, so its source_field is a placeholder that never needs to
-        // appear in the file (e.g. one "amount" column driving amount_minor,
-        // currency, and dr_cr via three separate rows). Without this, every
-        // synonym ever saved for the stream would show up regardless of what
-        // was actually uploaded. Best-effort: a non-CSV file or a read
-        // failure falls back to showing the full active mapping below.
-        try {
-          const headers = await readCsvHeaders(file);
-          if (headers.length > 0) {
-            const normalizedHeaders = new Set(headers.map(normalizeHeader));
-            const relevantRows = toRows(
-              mappings.filter(
-                (m) => m.transform === 'CONST' || normalizedHeaders.has(normalizeHeader(m.source_field))
-              )
-            );
-
-            // Enrichment: check this file's headers against the DB
-            // dictionary and append only the ones genuinely not covered yet -
-            // surfaces what's actually new about this file.
-            const resolved = await fieldMappingService.resolveHeaders(stream, headers);
-            const newRows: MappingRow[] = resolved
-              .filter((r) => !r.matched)
-              .map((r, idx) => ({
-                id: `new-${idx}-${r.source_field}`,
-                source_field: r.source_field,
-                canonical_field: fields[0] || '',
-                transform: 'NONE' as TransformType,
-                isNew: true,
-              }));
-            if (!cancelled) {
-              setRows([...relevantRows, ...newRows]);
-              return;
-            }
-          }
-        } catch {
-          // fall through to the full active mapping below
+          setRows(modalRows);
+        } else {
+          // Fallback if file has no readable headers
+          const [mappings, fields] = await Promise.all([
+            fieldMappingService.getActive(stream, true),
+            fieldMappingService.canonicalFields(stream, true),
+          ]);
+          if (cancelled) return;
+          setCanonicalFieldOptions(fields);
+          setRows(
+            mappings.map((m, idx) => ({
+              id: m.mapping_id || `map-${idx}`,
+              source_field: m.source_field,
+              canonical_field: m.canonical_field || '',
+              transform: (m.transform || 'NONE') as TransformType,
+              transform_param: m.transform_param || '',
+              isNew: false,
+            }))
+          );
         }
-        if (!cancelled) setRows(toRows(mappings));
       } catch {
         if (!cancelled) {
           setRows([]);
@@ -140,14 +135,20 @@ export const FieldMappingTransformModal: React.FC<FieldMappingTransformModalProp
     };
 
     load();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen, stream, file]);
 
   const handleAddRow = () => {
     const newId = `map-${Date.now()}`;
+    const unusedHeader =
+      csvHeaders.find((h) => !rows.some((r) => r.source_field.toLowerCase() === h.toLowerCase())) ||
+      csvHeaders[0] ||
+      'new_column';
     setRows((prev) => [
       ...prev,
-      { id: newId, source_field: 'new_column', canonical_field: canonicalFieldOptions[0] || '', transform: 'NONE' },
+      { id: newId, source_field: unusedHeader, canonical_field: '', transform: 'NONE', transform_param: '' },
     ]);
   };
 
@@ -162,25 +163,66 @@ export const FieldMappingTransformModal: React.FC<FieldMappingTransformModalProp
   };
 
   const handleAiAutoMap = () => {
-    setRows((prev) =>
-      prev.map((r) => {
+    setRows((prev) => {
+      const usedCanonical = new Set<string>();
+      return prev.map((r) => {
+        const normSource = r.source_field.toLowerCase().trim();
+        let target = '';
         let t: TransformType = 'NONE';
-        if (r.source_field.includes('date')) t = 'PARSE_DATE';
-        else if (r.source_field.includes('amount')) t = 'TO_MINOR_UNITS';
-        else if (r.source_field.includes('name') || r.source_field.includes('ref')) t = 'TRIM';
-        return { ...r, transform: t };
-      })
-    );
+
+        if (normSource.includes('date')) {
+          target = 'transaction_date';
+          t = 'PARSE_DATE';
+        } else if (normSource === 'amount' || normSource.includes('amount_minor')) {
+          target = 'amount_minor';
+          t = 'TO_MINOR_UNITS';
+        } else if (normSource.includes('ref') || normSource.includes('utr')) {
+          target = 'bank_reference';
+          t = 'TRIM';
+        } else if (normSource.includes('payer') || normSource.includes('account_no')) {
+          target = 'payer_account_no';
+          t = 'TRIM';
+        } else if (normSource.includes('charge')) {
+          target = 'is_bank_charge';
+          t = 'NONE';
+        }
+
+        // If target was already assigned to another column or unmatched, set to '-' ('')
+        if (target && usedCanonical.has(target)) {
+          target = '';
+          t = 'NONE';
+        }
+        if (target) {
+          usedCanonical.add(target);
+        }
+
+        return { ...r, canonical_field: target, transform: t };
+      });
+    });
   };
 
   const handleConfirm = async () => {
     setIsSubmitting(true);
     try {
-      const payload: FieldMappingIn[] = rows.map((r) => ({
-        source_field: r.source_field,
-        canonical_field: r.canonical_field,
-        transform: r.transform,
-      }));
+      const seen = new Set<string>();
+      const payload: FieldMappingIn[] = [];
+
+      for (const r of rows) {
+        const src = r.source_field.trim();
+        const canon = r.canonical_field.trim();
+        if (!src || !canon || canon === '-') continue;
+        const key = `${src.toLowerCase()}::${canon.toLowerCase()}::${r.transform}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          payload.push({
+            source_field: src,
+            canonical_field: canon,
+            transform: r.transform,
+            transform_param: r.transform_param.trim() || null,
+          });
+        }
+      }
+
       await onConfirmMapping(payload);
     } finally {
       setIsSubmitting(false);
@@ -255,10 +297,15 @@ export const FieldMappingTransformModal: React.FC<FieldMappingTransformModalProp
                         onChange={(e) => handleRowChange(row.id, 'source_field', e.target.value)}
                         className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-800 font-medium focus:outline-none focus:border-indigo-500"
                       >
-                        <option value={row.source_field}>{row.source_field}</option>
-                        {canonicalFieldOptions.map((f) => (
-                          <option key={f} value={f}>{f}</option>
+                        {row.source_field && !csvHeaders.includes(row.source_field) && (
+                          <option value={row.source_field}>{row.source_field}</option>
+                        )}
+                        {csvHeaders.map((h) => (
+                          <option key={h} value={h}>{h}</option>
                         ))}
+                        {csvHeaders.length === 0 && !row.source_field && (
+                          <option value="new_column">new_column</option>
+                        )}
                       </select>
                       {row.isNew && (
                         <span
@@ -278,6 +325,7 @@ export const FieldMappingTransformModal: React.FC<FieldMappingTransformModalProp
                         onChange={(e) => handleRowChange(row.id, 'canonical_field', e.target.value)}
                         className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-900 font-semibold focus:outline-none focus:border-indigo-500"
                       >
+                        <option value="">-</option>
                         {canonicalFieldOptions.map((f) => (
                           <option key={f} value={f}>{f}</option>
                         ))}
@@ -285,7 +333,7 @@ export const FieldMappingTransformModal: React.FC<FieldMappingTransformModalProp
                     </div>
 
                     {/* Transform Dropdown */}
-                    <div className="col-span-3">
+                    <div className="col-span-3 space-y-1">
                       <select
                         value={row.transform}
                         onChange={(e) =>
@@ -297,6 +345,15 @@ export const FieldMappingTransformModal: React.FC<FieldMappingTransformModalProp
                           <option key={t.value} value={t.value}>{t.label}</option>
                         ))}
                       </select>
+                      {TRANSFORM_PARAM_PLACEHOLDER[row.transform] && (
+                        <input
+                          type="text"
+                          value={row.transform_param}
+                          onChange={(e) => handleRowChange(row.id, 'transform_param', e.target.value)}
+                          placeholder={TRANSFORM_PARAM_PLACEHOLDER[row.transform]}
+                          className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1 text-[11px] text-slate-600 focus:outline-none focus:border-indigo-500"
+                        />
+                      )}
                     </div>
 
                     {/* Delete Action Button */}

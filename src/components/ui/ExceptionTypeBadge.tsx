@@ -7,32 +7,61 @@ interface ExceptionTypeBadgeProps {
   className?: string;
 }
 
-const TYPE_VARIANT_MAP: Record<string, BadgeVariant> = {
-  'bank_charge': 'muted',
-  'partial_payment': 'warn',
-  'short_pay': 'bad',
-  'Short-Pay': 'bad',
-  'No Payment Received': 'bad',
-  'over_pay': 'accent',
-  'fx_variance': 'warn',
-  'unidentified_remittance': 'warn',
-  'multi_invoice_break': 'bad',
-  'GL Control Mismatch': 'bad',
-  'Double Collision': 'bad',
-  'Duplicate Transaction': 'bad',
-  'Unapplied Payment': 'warn',
-  Suspense: 'warn',
-  'Multiple Invoice Match': 'warn',
-  'Standalone Bank Charge': 'muted',
-  'Timing Difference': 'muted',
-  'Manually Unreconciled': 'muted',
-  'Gateway Variance': 'accent',
+interface TypeMeta {
+  variant: BadgeVariant;
+  /** Display label override - falls back to the raw `type` value when unset. */
+  label?: string;
+}
+
+const TYPE_META: Record<string, TypeMeta> = {
+  // Legacy ARExceptionType values - still fed by AROverviewTab's mock data
+  // (src/mocks/ar.ts), which already carries its own display-ready strings.
+  'bank_charge': { variant: 'muted' },
+  'partial_payment': { variant: 'warn' },
+  'short_pay': { variant: 'bad' },
+  'Short-Pay': { variant: 'bad' },
+  'No Payment Received': { variant: 'bad' },
+  'over_pay': { variant: 'accent' },
+  'fx_variance': { variant: 'warn' },
+  'unidentified_remittance': { variant: 'warn' },
+  'multi_invoice_break': { variant: 'bad' },
+  'GL Control Mismatch': { variant: 'bad' },
+  'Double Collision': { variant: 'bad' },
+  'Duplicate Transaction': { variant: 'bad' },
+  'Unapplied Payment': { variant: 'warn' },
+  Suspense: { variant: 'warn' },
+  'Multiple Invoice Match': { variant: 'warn' },
+  'Standalone Bank Charge': { variant: 'muted' },
+  'Timing Difference': { variant: 'muted' },
+  'Manually Unreconciled': { variant: 'muted' },
+  'Gateway Variance': { variant: 'accent' },
+
+  // Real backend exception_type enum (ExceptionOut['exception_type']) - fed
+  // by the live API on the Exceptions and Matched tabs. Every value here is
+  // a real constants.EXCEPTION_TYPES entry the backend can actually raise
+  // (see docs/reconciliation.md §8).
+  SHORT_PAY: { variant: 'bad', label: 'Short-Pay' },
+  SUSPENSE: { variant: 'warn', label: 'Suspense' },
+  DOUBLE_COLLISION: { variant: 'bad', label: 'Double Collision' },
+  MULTIPLE_INVOICE_MATCH: { variant: 'warn', label: 'Multiple Invoice Match' },
+  UNAPPLIED_CASH: { variant: 'warn', label: 'Unapplied Cash' },
+  NO_PAYMENT: { variant: 'bad', label: 'No Payment Received' },
+  GL_VARIANCE: { variant: 'bad', label: 'GL Variance' },
+  DUPLICATE: { variant: 'muted', label: 'Duplicate' },
+  BANK_CHARGE: { variant: 'muted', label: 'Bank Charge' },
+  OVERPAYMENT: { variant: 'accent', label: 'Overpayment' },
+  TIMING_DIFFERENCE: { variant: 'muted', label: 'Timing Difference' },
+  GATEWAY_VARIANCE: { variant: 'accent', label: 'Gateway Variance' },
 };
+
+/** Single source of truth for both the color and the display label of an
+ * exception type, so callers never hand-roll their own badge classes. */
+export const exceptionTypeLabel = (type: string): string => TYPE_META[type]?.label || type;
 
 export const ExceptionTypeBadge: React.FC<ExceptionTypeBadgeProps> = ({
   type,
   className,
 }) => {
-  const variant = TYPE_VARIANT_MAP[type] || 'muted';
-  return <Badge variant={variant} label={type} className={className} />;
+  const meta = TYPE_META[type];
+  return <Badge variant={meta?.variant || 'muted'} label={meta?.label || type} className={className} />;
 };

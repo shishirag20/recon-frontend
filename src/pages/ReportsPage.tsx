@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Topbar } from '../components/layout/Topbar';
 import { TabBar } from '../components/layout/TabBar';
 import { Button } from '../components/ui/Button';
@@ -39,8 +39,9 @@ export const ReportsPage: React.FC = () => {
   const [arExceptions, setArExceptions] = useState<any[]>([]);
   const { toast } = useToast();
 
-  useEffect(() => {
+  React.useEffect(() => {
     let cancelled = false;
+    
     reportsService.getReportRuns().then((runs: any) => {
       if (!cancelled && runs && runs.length > 0) {
         setFetchedRuns(runs);
@@ -53,7 +54,9 @@ export const ReportsPage: React.FC = () => {
       }
     }).catch(() => {});
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const reportRuns: RunReportDetail[] = useMemo(() => {

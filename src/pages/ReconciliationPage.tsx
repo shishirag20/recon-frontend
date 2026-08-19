@@ -5,6 +5,7 @@ import { Button } from '../components/ui/Button';
 import { Plus, ChevronLeft, CreditCard, FileText, Landmark, ArrowRight } from 'lucide-react';
 import { ReconciliationCard } from '../components/reconciliation/ReconciliationCard';
 import { NewReconciliationModal } from '../components/reconciliation/NewReconciliationModal';
+import { RunReconciliationModal } from '../components/reconciliation/RunReconciliationModal';
 import { useReconciliationStore } from '../store/useReconciliationStore';
 import { useModal } from '../hooks/useModal';
 import { useToast } from '../hooks/useToast';
@@ -44,7 +45,8 @@ const LIBRARY_CATEGORIES: LibraryCategory[] = [
 export const ReconciliationPage: React.FC = () => {
   const { category } = useParams<{ category?: string }>();
   const navigate = useNavigate();
-  const [subFilter, setSubFilter] = useState<'all' | 'mine' | 'needs-resolution' | 'completed'>('needs-resolution');
+  const [subFilter, setSubFilter] = useState<'all' | 'mine' | 'needs-resolution' | 'completed'>('all');
+  const [selectedRunJob, setSelectedRunJob] = useState<Reconciliation | null>(null);
 
   const jobs = useReconciliationStore((s) => s.jobs);
   const fetchJobs = useReconciliationStore((s) => s.fetchJobs);
@@ -220,7 +222,11 @@ export const ReconciliationPage: React.FC = () => {
         {filteredJobs.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {filteredJobs.map((job) => (
-              <ReconciliationCard key={job.id} job={job} />
+              <ReconciliationCard
+                key={job.id}
+                job={job}
+                onRun={(jobToRun) => setSelectedRunJob(jobToRun)}
+              />
             ))}
           </div>
         ) : (
@@ -229,6 +235,17 @@ export const ReconciliationPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {selectedRunJob && (
+        <RunReconciliationModal
+          isOpen={!!selectedRunJob}
+          onClose={() => setSelectedRunJob(null)}
+          definitionId={selectedRunJob.id || 'rec-ar-001'}
+          onRunComplete={async () => {
+            await fetchJobs();
+          }}
+        />
+      )}
     </div>
   );
 };

@@ -13,9 +13,9 @@ export const AUTH_TOKEN_KEY =
 export const API_ROUTES = {
   // Accounts Receivable (AR)
   AR: {
-    RECONCILIATION: (id: string) => `/ar/reconciliations/${id}`,
-    RULES: (id: string) => `/ar/reconciliations/${id}/rules`,
-    RULE_BY_ID: (id: string, ruleId: string) => `/ar/reconciliations/${id}/rules/${ruleId}`,
+    RECONCILIATION: (id: string) => `/reconciliations/${id}`,
+    RULES: (id: string) => `/reconciliations/${id}/rules`,
+    RULE_BY_ID: (id: string, ruleId: string) => `/reconciliations/${id}/rules/${ruleId}`,
     INVOICES: `/ar/invoices`,
     BANK_STATEMENTS: `/ar/bank-statements`,
     CUSTOMERS: `/ar/customers`,
@@ -26,7 +26,19 @@ export const API_ROUTES = {
   RECONCILIATIONS: {
     LIST: `/reconciliations`,
     DETAIL: (id: string) => `/reconciliations/${id}`,
-    RUN: (id: string) => `/reconciliations/${id}/run`,
+    // Same URL serves both POST (create/enqueue a run) and GET (list runs)
+    // on the real backend - /reconciliations/{id}/runs, plural.
+    RUNS: (id: string) => `/reconciliations/${id}/runs`,
+    RUN_STATUS: (runId: string) => `/runs/${runId}`,
+    RUN_RETRY: (runId: string) => `/runs/${runId}/retry`,
+    RUN_MATCHES: (runId: string) => `/runs/${runId}/matches`,
+    RUN_EXCEPTIONS: (runId: string) => `/runs/${runId}/exceptions`,
+    RUN_PAYMENTS: (runId: string) => `/runs/${runId}/payments`,
+    RUN_OPEN_INVOICES: (runId: string) => `/runs/${runId}/open-invoices`,
+    EXCEPTION_UPDATE: (exceptionId: string) => `/exceptions/${exceptionId}`,
+    EXCEPTION_RESOLVE_NO_PAYMENT: (exceptionId: string) => `/exceptions/${exceptionId}/resolve-no-payment`,
+    EXCEPTION_RESOLVE_SUSPENSE: (exceptionId: string) => `/exceptions/${exceptionId}/resolve-suspense`,
+    CUSTOMER_OPEN_INVOICES: (customerId: string) => `/customers/${customerId}/open-invoices`,
   },
   // DataHub — Data Sources
   DATA_HUB: {
@@ -38,6 +50,7 @@ export const API_ROUTES = {
     FIELD_MAPPING_VERSIONS: (stream: string) => `/field-mappings/${stream}/versions`,
     FIELD_MAPPING_PREVIEW: (stream: string) => `/field-mappings/${stream}/preview`,
     FIELD_MAPPING_RESOLVE: (stream: string) => `/field-mappings/${stream}/resolve-headers`,
+    FIELD_MAPPING_RESOLVE_MAPPING: (stream: string) => `/field-mappings/${stream}/resolve-mapping`,
     FIELD_MAPPING_CANONICAL_FIELDS: (stream: string) => `/field-mappings/${stream}/canonical-fields`,
     INGESTION_JOBS: `/ingestion-jobs`,
     INGESTION_JOB: (id: string) => `/ingestion-jobs/${id}`,

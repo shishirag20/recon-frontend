@@ -7,9 +7,10 @@ import { Play } from 'lucide-react';
 
 interface ReconciliationCardProps {
   job: Reconciliation;
+  onRun?: (job: Reconciliation) => void;
 }
 
-export const ReconciliationCard: React.FC<ReconciliationCardProps> = ({ job }) => {
+export const ReconciliationCard: React.FC<ReconciliationCardProps> = ({ job, onRun }) => {
   const navigate = useNavigate();
 
   const handleOpenWorkspace = () => {
@@ -21,6 +22,7 @@ export const ReconciliationCard: React.FC<ReconciliationCardProps> = ({ job }) =
   };
 
   const isNeedsResolution = job.status === 'Needs resolution' || (job.exceptionsCount && job.exceptionsCount > 0);
+  const hasRunData = job.totalRows > 0 || job.matchedRows > 0;
 
   const getStatusBadge = () => {
     if (job.status === 'Needs resolution' || (job.exceptionsCount && job.exceptionsCount > 0)) {
@@ -37,17 +39,27 @@ export const ReconciliationCard: React.FC<ReconciliationCardProps> = ({ job }) =
         </span>
       );
     }
+    if (job.status === 'Not run yet' || !hasRunData) {
+      return (
+        <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-500 border border-slate-200 whitespace-nowrap">
+          Not run
+        </span>
+      );
+    }
     return (
       <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200 whitespace-nowrap">
-        {job.status || 'Active'}
+        {job.status}
       </span>
     );
   };
 
-  const formattedUnreconciled = (job.unreconciledAmount ?? job.unmatchedRows * 9650).toLocaleString('en-IN', {
-    maximumFractionDigits: 2,
-    minimumFractionDigits: 2,
-  });
+  const formattedUnreconciled =
+    hasRunData
+      ? '₹' + (job.unreconciledAmount ?? 0).toLocaleString('en-IN', {
+          maximumFractionDigits: 2,
+          minimumFractionDigits: 2,
+        })
+      : '—';
 
   return (
     <div
@@ -72,40 +84,40 @@ export const ReconciliationCard: React.FC<ReconciliationCardProps> = ({ job }) =
         {getStatusBadge()}
       </div>
 
-      {/* Stats Row Grid - 3 Columns (Matches reference CSS: .rc-stats grid-template-columns: repeat(3, 1fr)) */}
+      {/* Stats Row Grid - 3 Columns */}
       <div className="grid grid-cols-3 gap-x-3 gap-y-3 pt-3 border-t border-slate-100 text-left">
         <div>
           <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Matched</div>
           <div className="text-xs font-bold text-slate-900 tnum mt-0.5">
-            {job.matchedRows}
+            {hasRunData ? job.matchedRows : '—'}
           </div>
         </div>
 
         <div>
           <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Open Exceptions</div>
           <div className="text-xs font-bold text-amber-700 tnum mt-0.5">
-            {job.exceptionsCount || job.unmatchedRows}
+            {hasRunData ? (job.exceptionsCount || job.unmatchedRows) : '—'}
           </div>
         </div>
 
         <div>
           <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Unreconciled</div>
           <div className="text-xs font-bold text-amber-700 tnum mt-0.5">
-            ₹{formattedUnreconciled}
+            {formattedUnreconciled}
           </div>
         </div>
 
         <div>
           <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Owner</div>
           <div className="text-xs font-semibold text-slate-700 truncate mt-0.5">
-            {job.owner || 'Priya Nair'}
+            {job.owner ?? '—'}
           </div>
         </div>
 
         <div>
           <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Due</div>
           <div className="text-xs font-semibold text-slate-700 mt-0.5">
-            {job.due || 'Jul 22'}
+            {job.due ?? '—'}
           </div>
         </div>
       </div>
@@ -113,7 +125,7 @@ export const ReconciliationCard: React.FC<ReconciliationCardProps> = ({ job }) =
       {/* Footer Row */}
       <div className="flex items-center justify-between pt-3 border-t border-slate-100">
         <span className="text-[11.5px] text-slate-400 font-medium">
-          {job.cadence || 'Daily'} · Last run {new Date(job.lastRun).toISOString().slice(0, 10)}
+          {job.cadence ?? '—'} · {hasRunData && job.lastRun ? `Last run ${new Date(job.lastRun).toISOString().slice(0, 10)}` : 'Never run'}
         </span>
 
         <Button
@@ -122,11 +134,15 @@ export const ReconciliationCard: React.FC<ReconciliationCardProps> = ({ job }) =
           icon={Play}
           onClick={(e) => {
             e.stopPropagation();
-            handleOpenWorkspace();
+            if (onRun) {
+              onRun(job);
+            } else {
+              handleOpenWorkspace();
+            }
           }}
-          className="text-slate-500 hover:text-slate-900"
+          className="text-slate-600 hover:text-indigo-600 font-semibold"
         >
-          Run
+          Run reconciliation
         </Button>
       </div>
     </div>

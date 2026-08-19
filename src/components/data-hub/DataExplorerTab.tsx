@@ -18,7 +18,7 @@ import {
   AlertCircle,
   Zap,
 } from 'lucide-react';
-import { dataSourceService, recordsService } from '../../services';
+import { dataSourceService, recordsService, fieldMappingService } from '../../services';
 import { useToast } from '../../hooks/useToast';
 import { useDataHubStore } from '../../store/useDataHubStore';
 import { getStreamByCategory } from '../../types/datahub';
@@ -59,11 +59,33 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
   const [currentPage, setCurrentPage] = useState(1);
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
   const [editFormData, setEditFormData] = useState<Partial<CanonicalRecordOut>>({});
+  const [streamCanonicalFields, setStreamCanonicalFields] = useState<string[]>([]);
   const pageSize = 8;
   const { toast } = useToast();
 
+  useEffect(() => {
+    let cancelled = false;
+    fieldMappingService.canonicalFields(activeStream, true).then((fields) => {
+      if (!cancelled) setStreamCanonicalFields(fields);
+    }).catch(() => {
+      if (!cancelled) setStreamCanonicalFields([]);
+    });
+    return () => { cancelled = true; };
+  }, [activeStream]);
+
   const sourcesListFromStore = useDataHubStore((s) => s.sourcesList);
   const setSourcesInStore = useDataHubStore((s) => s.setSources);
+
+  // Dynamically extract extra JSONB column keys present in `r.raw` across loaded records
+  const dynamicCustomHeaders = React.useMemo(() => {
+    const keys = new Set<string>();
+    canonicalRecords.forEach((r) => {
+      if (r.raw && typeof r.raw === 'object') {
+        Object.keys(r.raw).forEach((k) => keys.add(k));
+      }
+    });
+    return Array.from(keys);
+  }, [canonicalRecords]);
 
   // Derive entityId from first data source in store/API (fallback 'ent-001')
   const entityId =
@@ -225,6 +247,42 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
       toast('Failed to save record correction', 'bad');
     }
   };
+  // Stream-specific dynamic fields fallback if backend API list loading
+  const activeFieldsToDisplay = React.useMemo(() => {
+    if (streamCanonicalFields.length > 0) return streamCanonicalFields;
+    if (activeStream === 'INVOICE') {
+      return ['invoice_number', 'issue_date', 'due_date', 'total_amount_minor', 'currency', 'customer_code'];
+    }
+    if (activeStream === 'CUSTOMER') {
+      return ['customer_code', 'company_name', 'pan', 'gstin', 'city', 'state'];
+    }
+    return ['transaction_date', 'payer_name', 'bank_reference', 'amount_minor', 'currency'];
+  }, [streamCanonicalFields, activeStream]);
+
+  const formatHeaderLabel = (name: string) => {
+    return name
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (l) => l.toUpperCase());
+  };
+
+  const getRecordFieldValue = (r: CanonicalRecordOut, field: string): string => {
+    const val = r[field];
+    if (val !== undefined && val !== null && val !== '') {
+      if (typeof val === 'number' && (field.includes('minor') || field.includes('amount'))) {
+        return (val / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+      }
+      if (typeof val === 'boolean') return val ? 'Yes' : 'No';
+      return String(val);
+    }
+    if (field === 'transaction_date' || field === 'issue_date') return r.txn_date || r.statement_date || r.invoice_date || '—';
+    if (field === 'amount_minor' || field === 'total_amount_minor') {
+      const rawAmt = r.amount_minor ?? r.total_amount_minor ?? (r.amount != null ? Math.round(r.amount * 100) : null);
+      return rawAmt != null ? (rawAmt / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—';
+    }
+    if (field === 'payer_name' || field === 'company_name') return r.counterparty || r.payer_name || r.customer_name || r.company_name || '—';
+    if (field === 'bank_reference' || field === 'invoice_number') return r.bank_reference || r.invoice_number || r.reference || '—';
+    return '—';
+  };
 
   return (
     <div className="flex flex-col gap-5 fade-in">
@@ -316,37 +374,29 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase text-[11px] tracking-wider">
               <tr>
                 <th className="px-4 py-3">Record ID</th>
-                <th
-                  className="px-4 py-3 cursor-pointer hover:text-slate-900 transition-colors"
-                  onClick={() => handleSort('date')}
-                >
-                  <div className="flex items-center gap-1">
-                    <span>Date</span>
-                    {sortField === 'date' &&
-                      (sortDir === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
-                  </div>
-                </th>
-                <th
-                  className="px-4 py-3 cursor-pointer hover:text-slate-900 transition-colors"
-                  onClick={() => handleSort('counterparty')}
-                >
-                  <div className="flex items-center gap-1">
-                    <span>Counterparty / Entity</span>
-                    {sortField === 'counterparty' &&
-                      (sortDir === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
-                  </div>
-                </th>
-                <th className="px-4 py-3">Reference / UTR</th>
-                <th
-                  className="px-4 py-3 text-right cursor-pointer hover:text-slate-900 transition-colors"
-                  onClick={() => handleSort('amount')}
-                >
-                  <div className="flex items-center justify-end gap-1">
-                    <span>Amount</span>
-                    {sortField === 'amount' &&
-                      (sortDir === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
-                  </div>
-                </th>
+
+                {/* Dynamic Canonical Stream Headers */}
+                {activeFieldsToDisplay.map((col) => (
+                  <th
+                    key={col}
+                    className="px-4 py-3 font-bold text-slate-700 cursor-pointer hover:text-slate-900 transition-colors"
+                    onClick={() => handleSort(col as any)}
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>{formatHeaderLabel(col)}</span>
+                      {sortField === (col as any) &&
+                        (sortDir === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
+                    </div>
+                  </th>
+                ))}
+
+                {/* Dynamic Custom Fields Headers */}
+                {dynamicCustomHeaders.map((col) => (
+                  <th key={col} className="px-4 py-3 font-bold text-slate-700">
+                    {formatHeaderLabel(col)}
+                  </th>
+                ))}
+
                 <th className="px-4 py-3 text-center">Status</th>
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
@@ -354,7 +404,7 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
             <tbody className="divide-y divide-slate-100">
               {isLoadingRecords ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
+                  <td colSpan={3 + activeFieldsToDisplay.length + dynamicCustomHeaders.length} className="px-4 py-8 text-center text-slate-400">
                     Loading {activeStream} records...
                   </td>
                 </tr>
@@ -363,12 +413,7 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
                   const recId = r.record_id || r.staging_id || r.statement_id || r.invoice_id || r.customer_id || `rec-${idx}`;
                   const isEditing = editingRecordId === recId;
                   const isError = r.valid === false;
-                  const rawAmountMinor = r.amount_minor ?? r.total_amount_minor ?? (r.amount != null ? Math.round(r.amount * 100) : 0);
-                  const displayAmount = rawAmountMinor / 100;
-                  const txnDate = r.txn_date || r.statement_date || r.invoice_date || '—';
-                  const counterparty = r.counterparty || r.payer_name || r.customer_name || r.company_name || '—';
-                  const reference = r.bank_reference || r.invoice_number || r.reference || '—';
-
+                  
                   return (
                     <tr
                       key={recId}
@@ -378,72 +423,23 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
                       <td className="px-4 py-3 font-semibold text-indigo-600 tnum max-w-30 truncate" title={recId}>
                         {recId.slice(0, 10)}...
                       </td>
-                      <td className="px-4 py-3 text-slate-500 tnum">
-                        {isEditing ? (
-                          <input
-                            type="text"
-                            value={editFormData.txn_date || ''}
-                            onChange={(e) => setEditFormData({ ...editFormData, txn_date: e.target.value })}
-                            className="w-24 bg-white border border-indigo-500 rounded px-1.5 py-0.5 text-xs"
-                          />
-                        ) : (
-                          txnDate
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        {isEditing ? (
-                          <input
-                            type="text"
-                            value={editFormData.counterparty || ''}
-                            onChange={(e) => setEditFormData({ ...editFormData, counterparty: e.target.value })}
-                            className="w-full bg-white border border-indigo-500 rounded px-1.5 py-0.5 text-xs font-semibold"
-                          />
-                        ) : (
-                          <div className="flex flex-col">
-                            <span className="font-semibold text-slate-900">{counterparty}</span>
-                            {r.issues && r.issues.length > 0 && (
-                              <span className="text-[10px] text-rose-600 font-medium flex items-center gap-1 mt-0.5">
-                                <AlertCircle className="w-3 h-3 flex-none" />
-                                {r.issues[0]}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600 font-medium">
-                        {isEditing ? (
-                          <input
-                            type="text"
-                            value={editFormData.reference || ''}
-                            onChange={(e) => setEditFormData({ ...editFormData, reference: e.target.value })}
-                            className="w-full bg-white border border-indigo-500 rounded px-1.5 py-0.5 text-xs"
-                          />
-                        ) : (
-                          reference
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-right font-bold text-slate-900 tnum">
-                        {isEditing ? (
-                          <div className="flex items-center justify-end gap-1">
-                            <span className="text-slate-400 font-semibold text-xs">{r.currency || 'INR'}</span>
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={editFormData.amount_minor != null ? editFormData.amount_minor / 100 : ''}
-                              onChange={(e) => {
-                                const parsed = parseFloat(e.target.value);
-                                setEditFormData({
-                                  ...editFormData,
-                                  amount_minor: isNaN(parsed) ? 0 : Math.round(parsed * 100),
-                                });
-                              }}
-                              className="w-28 bg-white border border-indigo-500 rounded px-1.5 py-0.5 text-xs text-right font-bold text-slate-900 focus:outline-none"
-                            />
-                          </div>
-                        ) : (
-                          `${r.currency || 'INR'} ${displayAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
-                        )}
-                      </td>
+
+                      {/* Dynamic Canonical Stream Cells */}
+                      {activeFieldsToDisplay.map((col) => (
+                        <td key={col} className="px-4 py-3 text-slate-700 font-medium">
+                          {getRecordFieldValue(r, col)}
+                        </td>
+                      ))}
+
+                      {/* Dynamic Custom Fields Data Cells */}
+                      {dynamicCustomHeaders.map((col) => {
+                        const val = r.raw?.[col];
+                        return (
+                          <td key={col} className="px-4 py-3 text-slate-700 font-medium font-mono text-[11.5px]">
+                            {val !== undefined && val !== null ? String(val) : '—'}
+                          </td>
+                        );
+                      })}
                       <td className="px-4 py-3 text-center">
                         <StatusPill status={r.valid !== false ? 'mapped' : 'error'} />
                       </td>
@@ -484,7 +480,7 @@ export const DataExplorerTab: React.FC<DataExplorerTabProps> = ({
                 })
               ) : (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
+                  <td colSpan={3 + activeFieldsToDisplay.length + dynamicCustomHeaders.length} className="px-4 py-8 text-center text-slate-400">
                     No canonical database records found for {activeStream} stream
                   </td>
                 </tr>

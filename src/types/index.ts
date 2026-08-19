@@ -90,7 +90,7 @@ export interface Reconciliation {
   owner?: string;
   due?: string;
   cadence?: string;
-  lastRun: string;
+  lastRun?: string;
   sourceLeft: string;
   sourceRight: string;
   arFinished?: boolean;
@@ -164,7 +164,7 @@ export interface Rule {
   type: RuleType;
   enabled: boolean;
   priority?: number;
-  confidence?: number;
+  confidence?: number | null;
   fieldMap?: Record<string, string>;
   toleranceAmount?: number;
   windowDays?: number;
@@ -210,7 +210,7 @@ export interface ARRule {
   kind: string;
   phase?: number | string;
   priority?: number;
-  confidence?: number;
+  confidence?: number | null;
   cond?: any;
   bankField?: string;
   secondSource?: string;
@@ -281,6 +281,138 @@ export interface BankStatement {
   description?: string;
   amount?: number;
   utr?: string;
+}
+
+// ── Real backend shapes (app/reconciliation/schema.py) - M2/M3 run results ──
+export interface RunOut {
+  run_id: string;
+  definition_id: string;
+  run_no: string;
+  period_start: string | null;
+  period_end: string | null;
+  status: 'DRAFT' | 'QUEUED' | 'RUNNING' | 'COMPUTED' | 'APPROVED' | 'CLOSED' | 'FAILED' | string;
+  volume: number | null;
+  matched_count: number | null;
+  exception_count: number | null;
+  matched_value_minor: number | null;
+  exception_value_minor: number | null;
+  unapplied_minor: number | null;
+  prepared_by: string | null;
+  reviewed_by: string | null;
+  signed_at: string | null;
+  run_hash: string | null;
+  attempt_count: number;
+  max_attempts: number;
+  last_error: string | null;
+  started_at: string;
+}
+
+export interface AllocationOut {
+  allocation_id: string;
+  invoice_id: string;
+  /** Real, human-readable invoice number - invoice_id is the internal row UUID. */
+  invoice_number: string | null;
+  /** The invoice's own total (what was owed) - not necessarily what this allocation actually applied. */
+  invoice_amount_minor: number | null;
+  payment_id: string;
+  /** The payment's own total received - may exceed or fall short of allocated_minor (overpayment/short-pay/fee cases). */
+  payment_amount_minor: number | null;
+  bank_txn_id: string | null;
+  /** Real bank reference/UTR from the source file - bank_txn_id is the internal generated row UUID. */
+  bank_reference: string | null;
+  /** How much of this payment was actually applied to this invoice. */
+  allocated_minor: number;
+}
+
+export interface MatchGroupOut {
+  match_group_id: string;
+  run_id: string;
+  match_type: 'EXACT' | 'TOLERANCE' | 'PARTIAL' | 'SUBSET_SUM' | 'MANY_TO_ONE' | 'ONE_TO_MANY' | 'MANUAL' | string;
+  /** The ALLOCATION-phase rule that committed this match group. */
+  rule_id: string | null;
+  /** The CUSTOMER_LOCK-phase rule that identified the payment's customer. */
+  locked_by_rule_id: string | null;
+  /** The "Invoice Number in Narration" cross-check rule - set only when it found a narration-referenced invoice and confirmed it belongs to the locked customer. */
+  narration_crosscheck_rule_id: string | null;
+  confidence: number | null;
+  status: 'AUTO_MATCHED' | 'SUGGESTED' | 'CONFIRMED' | 'REJECTED' | string;
+  reason: string | null;
+  created_at: string;
+  allocations: AllocationOut[];
+}
+
+export interface ExceptionOut {
+  exception_id: string;
+  run_id: string;
+  exception_no: string | null;
+  exception_type:
+    | 'SHORT_PAY' | 'OVERPAYMENT' | 'UNAPPLIED_CASH' | 'TIMING_DIFFERENCE' | 'GL_VARIANCE'
+    | 'DUPLICATE' | 'MULTIPLE_INVOICE_MATCH' | 'DOUBLE_COLLISION' | 'SUSPENSE' | 'BANK_CHARGE'
+    | 'GATEWAY_VARIANCE' | 'NO_PAYMENT' | string;
+  bank_txn_id: string | null;
+  invoice_id: string | null;
+  customer_id: string | null;
+  customer_name?: string | null;
+  customer_code?: string | null;
+  invoice_number?: string | null;
+  bank_reference?: string | null;
+  payer_name?: string | null;
+  narration?: string | null;
+  discrepancy_minor: number | null;
+  amount_minor?: number | null;
+  reason_code: string | null;
+  status: 'OPEN' | 'INVESTIGATING' | 'RESOLVED' | 'AUTO_RESOLVED' | 'DEFERRED' | 'WRITTEN_OFF' | 'ADJUSTED' | 'CARRIED_FORWARD' | string;
+  resolution_outcome: 'WRITEOFF' | 'KEEPOPEN' | 'DISPUTE' | 'JOURNAL' | 'ON_ACCOUNT' | 'MANUAL_MATCH' | string | null;
+  resolver_id: string | null;
+  resolution_notes: string | null;
+  resolved_at: string | null;
+  created_at: string;
+  detail: Record<string, unknown> | null;
+  match_group_id: string | null;
+}
+
+/** A run's open/unapplied payments - the candidate pool the
+ * No-Payment-Received resolution panel offers to manually match against an
+ * open invoice (app/reconciliation/schema.py's PaymentOut). */
+export interface PaymentOut {
+  payment_id: string;
+  bank_txn_id: string;
+  bank_reference: string | null;
+  customer_id: string | null;
+  customer_name: string | null;
+  total_received_minor: number;
+  /** Cash from this payment not yet applied to any invoice. */
+  unapplied_minor: number;
+  created_at: string;
+}
+
+export interface ResolveNoPaymentPayload {
+  payment_ids: string[];
+  note?: string;
+}
+
+/** A customer's open invoices - the Suspense resolution panel's invoice
+ * picker, once a candidate customer is selected
+ * (app/reconciliation/schema.py's InvoiceSummaryOut). */
+export interface InvoiceSummaryOut {
+  invoice_id: string;
+  invoice_number: string;
+  balance_due_minor: number;
+  due_date: string;
+  customer_id: string;
+  customer_name: string;
+}
+
+export interface ResolveSuspensePayload {
+  customer_id: string;
+  invoice_ids?: string[];
+  note?: string;
+}
+
+export interface ExceptionUpdatePayload {
+  status?: string;
+  resolution_outcome?: string;
+  resolution_notes?: string;
 }
 
 export interface AREngineResult {

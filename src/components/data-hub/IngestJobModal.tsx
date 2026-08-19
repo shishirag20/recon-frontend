@@ -320,8 +320,8 @@ export const IngestJobModal: React.FC<IngestJobModalProps> = ({
             </p>
             <p className="text-xs text-slate-500 mt-1">
               {isPartial
-                ? `${job.row_count} rows staged, ${job.error_count} rows have validation errors`
-                : `${job.row_count} rows staged successfully`}
+                ? `${job.row_count} rows processed, ${job.error_count} rows have validation errors`
+                : `${job.row_count} rows processed successfully`}
             </p>
           </div>
 
@@ -329,7 +329,7 @@ export const IngestJobModal: React.FC<IngestJobModalProps> = ({
           <div className="grid grid-cols-2 gap-3 w-full max-w-xs">
             <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-center">
               <div className="text-xl font-bold text-slate-900">{job.row_count}</div>
-              <div className="text-[11px] text-slate-500 mt-0.5">Rows Staged</div>
+              <div className="text-[11px] text-slate-500 mt-0.5">Rows Ingested</div>
             </div>
             <div className={`border rounded-lg p-3 text-center ${job.error_count > 0 ? 'bg-rose-50 border-rose-200' : 'bg-emerald-50 border-emerald-200'}`}>
               <div className={`text-xl font-bold ${job.error_count > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>{job.error_count}</div>
