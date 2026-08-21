@@ -127,6 +127,7 @@ export const arService = {
     const ruleId = rule.id || (rule as any).rule_id;
     const res = await api.patch<any>(`/reconciliations/${validId}/rules/${ruleId}`, {
       enabled: rule.enabled,
+      confidence: rule.confidence,
       config: rule.config || rule.cond,
     });
     return normalizeRule(res);
@@ -164,6 +165,13 @@ export const arService = {
   },
 
   /**
+   * Fetch valid rule data categories and canonical fields for Rule Studio UI
+   */
+  async getRuleCategories(): Promise<RuleCategoriesResponse> {
+    return api.get<RuleCategoriesResponse>('/reconciliations/rule-categories');
+  },
+
+  /**
    * Sign-off and lock an AR reconciliation period
    */
   async finishReconciliation(
@@ -174,3 +182,21 @@ export const arService = {
     return api.post(API_ROUTES.AR.SIGN_OFF(validId), { signedBy });
   },
 };
+
+export interface RuleCategoryField {
+  key: string;
+  label: string;
+  type: string;
+}
+
+export interface RuleCategory {
+  key: string;
+  label: string;
+  stream: string;
+  description: string;
+  fields: RuleCategoryField[];
+}
+
+export interface RuleCategoriesResponse {
+  categories: RuleCategory[];
+}

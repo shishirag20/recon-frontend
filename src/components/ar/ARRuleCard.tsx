@@ -1,43 +1,112 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import type { ARRule } from '../../types';
-import { ConfidenceBar } from '../ui/ConfidenceBar';
 import { Switch } from '../ui/Switch';
-import { Button } from '../ui/Button';
-import { ChevronUp, ChevronDown } from 'lucide-react';
-import { ARRuleEditor } from './ARRuleEditor';
-import { humanizeField } from '../../utils/formatters';
+import { ChevronUp, ChevronDown, Target } from 'lucide-react';
 
 interface RuleMeta {
   label?: string;
   description: string;
-  customChips?: (rule: ARRule) => React.ReactNode;
 }
 
-// Exported so other views that only need a rule's display label (e.g.
-// ARMatchedTab's "Resolved Via" column, keyed by rule.kind rather than
-// rendering a full card) can reuse the same polished names instead of a
-// second hardcoded copy.
+export interface RuleThresholdBadgeInfo {
+  label: string;
+  value: string;
+  color: string;
+}
+
+export function getRuleThresholdBadge(rule: ARRule): RuleThresholdBadgeInfo | null {
+  const cfg = rule.config || {};
+  const cond = rule.cond || {};
+
+  switch (rule.kind) {
+    case 'write-off': {
+      const rawVal =
+        cfg.amount?.value_minor ??
+        cfg.max_writeoff_amount ??
+        cfg.materiality_threshold ??
+        cond.amount?.value ??
+        500;
+      const val = typeof rawVal === 'number' && rawVal >= 100 ? rawVal / 100 : Number(rawVal);
+      return {
+        label: 'Materiality Threshold',
+        value: `≤ ₹${val.toFixed(2)}`,
+        color: 'bg-amber-50 text-amber-800 border-amber-200',
+      };
+    }
+    case 'bank-fee': {
+      const rawVal =
+        cfg.amount?.value_minor ??
+        cfg.max_fee_amount ??
+        cond.amount?.value ??
+        500;
+      const val = typeof rawVal === 'number' && rawVal >= 100 ? rawVal / 100 : Number(rawVal);
+      return {
+        label: 'Fee Variance Tolerance',
+        value: `± ₹${val.toFixed(2)}`,
+        color: 'bg-amber-50 text-amber-800 border-amber-200',
+      };
+    }
+    case 'tds-match': {
+      const rate = cfg.tds_rate_pct ?? cfg.rate_pct ?? cfg.default_tds_rate_pct ?? 10;
+      return {
+        label: 'TDS Deduction Rate',
+        value: `${rate}% TDS`,
+        color: 'bg-blue-50 text-blue-800 border-blue-200',
+      };
+    }
+    case 'subset-sum': {
+      const val = cfg.max_invoices ?? cfg.max_combo ?? cond.amount?.value ?? 10;
+      return {
+        label: 'Max Invoices Combo',
+        value: `≤ ${val} Invoices`,
+        color: 'bg-indigo-50 text-indigo-800 border-indigo-200',
+      };
+    }
+    case 'fuzzy-name': {
+      const val = cfg.min_similarity ? Math.round(cfg.min_similarity * 100) : rule.confidence || 85;
+      return {
+        label: 'Similarity Threshold',
+        value: `≥ ${val}% Sim`,
+        color: 'bg-purple-50 text-purple-800 border-purple-200',
+      };
+    }
+    case 'invoice-suffix':
+    case 'account-suffix': {
+      const val = cfg.min_length ?? cfg.suffix_length ?? 4;
+      return {
+        label: 'Min Suffix Digits',
+        value: `≥ ${val} Digits`,
+        color: 'bg-slate-100 text-slate-700 border-slate-200',
+      };
+    }
+    case 'threshold': {
+      let label = 'Tolerance Threshold';
+      if (rule.phase === 'short-pay') label = 'Shortfall Tolerance';
+      else if (rule.phase === 'unapplied') label = 'Unapplied Cash Limit';
+      else if (rule.phase === 'gl-check') label = 'GL Control Variance';
+      const rawVal = cfg.amount?.value_minor ?? cond.amount?.value ?? 0;
+      const val = typeof rawVal === 'number' && rawVal >= 100 ? rawVal / 100 : Number(rawVal);
+      return {
+        label,
+        value: `≤ ₹${val.toFixed(2)}`,
+        color: 'bg-amber-50 text-amber-800 border-amber-200',
+      };
+    }
+    default:
+      return null;
+  }
+}
+
 export const RULE_METADATA: Record<string, RuleMeta> = {
-  'dup-utr': {
-    label: 'Duplicate UTR Check',
-    description:
-      'Automatically detects and excludes bank rows that share an already-used UTR (unique transaction reference), preventing the same payment from being processed or matched twice.',
-  },
   'expected-utr': {
     label: 'Pre-Advised UTR Match',
     description:
-      'Automatically matches incoming payments to customer records using the UTR details they pre-submitted in the portal.',
+      'Automatically matches incoming payments to customer records using the UTR details they pre-submitted in the portal / expected remittances feed.',
   },
   'account-ifsc': {
     label: 'Payer Account & IFSC Match',
     description:
       'Automatically links incoming payments to customer accounts by verifying both their bank account number and IFSC code against saved records.',
-    customChips: () => (
-      <>
-        <span className="chip font-semibold">Payer Account & IFSC Match</span>
-        <span className="chip font-mono">payer_account_no & ifsc ↔ bank_account_no & ifsc_code</span>
-      </>
-    ),
   },
   upi: {
     label: 'UPI Handle Match',
@@ -58,15 +127,6 @@ export const RULE_METADATA: Record<string, RuleMeta> = {
     label: 'Company Name Match',
     description:
       "Automatically links incoming payments by performing a fuzzy match between the payer's name on the bank statement and the customer's saved company name.",
-    customChips: (rule) => (
-      <>
-        <span className="chip font-semibold">Company Name Match</span>
-        <span className="chip font-mono">payer_name ↔ company_name</span>
-        <span className="chip font-medium">
-          Match threshold: {rule.config?.min_similarity ? Math.round(rule.config.min_similarity * 100) : (rule.confidence || 85)}%
-        </span>
-      </>
-    ),
   },
   'account-suffix': {
     label: 'Masked Account Suffix Match',
@@ -86,7 +146,7 @@ export const RULE_METADATA: Record<string, RuleMeta> = {
   'invoice-suffix': {
     label: 'Truncated Invoice Number Match',
     description:
-      'Automatically matches a payment to an invoice by finding a shortened or partial version of the invoice number in the bank narration.',
+      "Automatically matches a payment to an invoice by finding a shortened or masked numeric suffix (e.g. '1046' from 'INV-XXXX1046', with 'X' masking characters and prefixes automatically stripped) in the bank narration.",
   },
   'exact-amount': {
     label: 'Exact Amount Match',
@@ -102,217 +162,38 @@ export const RULE_METADATA: Record<string, RuleMeta> = {
     label: 'Subset Sum Invoice Match',
     description:
       'Automatically matches a single payment against a combination of several open invoices whose amounts add up to the payment received.',
-    customChips: (rule) => (
-      <>
-        <span className="chip font-semibold">Subset Sum Invoice Match</span>
-        <span className="chip font-mono">amount ↔ sum(invoice_amounts)</span>
-        <span className="chip font-medium">
-          Max combo size: {rule.config?.max_combo ?? rule.cond?.amount?.value ?? 3}
-        </span>
-      </>
-    ),
   },
   'bank-fee': {
-    label: 'Bank Fee Tolerance Match',
+    label: 'Bank Fee Variance Match',
     description:
-      "Automatically matches a payment that falls just short of an invoice's balance by an amount consistent with a bank-deducted transfer fee.",
-    customChips: (rule) => (
-      <>
-        <span className="chip font-semibold">Bank Fee Tolerance Match</span>
-        <span className="chip font-mono">amount + fee ↔ invoice_amount</span>
-        <span className="chip font-medium">
-          Max fee: ₹{Number(rule.config?.max_fee_amount ?? rule.cond?.amount?.value ?? 150.0).toFixed(2)}
-        </span>
-      </>
-    ),
+      "Automatically matches a payment where Shortfall (Invoice Balance − Payment Received) equals the bank's explicit transfer fee or falls within configured fee tolerance, settling the invoice and booking the variance to Bank Charges GL.",
   },
   'write-off': {
     label: 'Small Balance Write-Off',
     description:
       'Automatically closes out a residual invoice balance that falls below the configured materiality threshold, rather than leaving it open as a disputed shortfall.',
-    customChips: (rule) => {
-      const rawVal = rule.config?.amount?.value_minor ?? rule.config?.max_writeoff_amount ?? rule.config?.materiality_threshold ?? rule.cond?.amount?.value ?? 500;
-      const thresholdVal = typeof rawVal === 'number' && rawVal >= 100 ? rawVal / 100 : Number(rawVal);
-      return (
-        <>
-          <span className="chip font-mono">amount ↔ effective_balance</span>
-          <span className="chip font-medium">
-            Materiality threshold: ₹{thresholdVal.toFixed(2)}
-          </span>
-        </>
-      );
-    },
   },
   overpayment: {
     label: 'Overpayment to On-Account Credit',
     description:
-      'Automatically records any amount received beyond an invoice\'s balance as an on-account credit for that customer, available to apply to future invoices.',
+      'When payment cash exceeds open invoice balance, targets the closest invoice, fully settles it, and parks remaining excess cash as On-Account Advance Credit on the customer account.',
   },
   'partial-payment': {
-    label: 'Partial Payment Allocation',
+    label: 'Partial Payment Allocation (FIFO Fallback)',
     description:
-      "Automatically applies a payment that doesn't fully cover an invoice as a partial settlement, leaving the remaining balance open.",
-  },
-  'period-cutoff-guard': {
-    label: 'Period Cutoff Guard',
-    description:
-      'Filters out invoices issued after the reconciliation period end date.',
-  },
-  'memo-netoff-guard': {
-    label: 'Credit / Debit Memo Net-off',
-    description:
-      'Nets off open credit and debit memos before allocation.',
+      "Universal fallback when no earlier rule matches: applies incoming cash to the customer's oldest open invoice to reduce its balance, leaving the residual shortfall open.",
   },
   threshold: {
     description:
       'Automatically decides tolerance thresholds for exceptions and GL control checks.',
-    customChips: (rule) => {
-      if (rule.phase === 'short-pay') {
-        return (
-          <span className="chip font-medium">
-            Shortfall tolerance: ₹{Number(rule.config?.max_shortfall_amount ?? rule.cond?.amount?.value ?? 1.0).toFixed(2)}
-          </span>
-        );
-      }
-      if (rule.phase === 'unapplied') {
-        return (
-          <span className="chip font-medium">
-            Unapplied cash threshold: ₹{Number(rule.config?.unapplied_threshold ?? rule.cond?.amount?.value ?? 0.0).toFixed(2)}
-          </span>
-        );
-      }
-      return (
-        <span className="chip font-medium">
-          GL variance tolerance: ₹{Number(rule.config?.max_gl_variance ?? rule.cond?.amount?.value ?? 0.0).toFixed(2)}
-        </span>
-      );
-    },
   },
 };
 
 export function getRuleDisplayFields(rule: ARRule) {
   const cfg = rule.config || {};
-  
-  let bankField = rule.bankField || cfg.location || cfg.bankField || cfg.bank_field;
-  let secondSource = rule.secondSource || cfg.source || cfg.secondSource;
-  let secondField = rule.secondField || cfg.match_field || cfg.secondField;
-
-  if (Array.isArray(cfg.match_fields)) {
-    secondField = cfg.match_fields.join(' & ');
-  } else if (Array.isArray(cfg.extract)) {
-    secondField = cfg.extract.join(' / ');
-  } else if (typeof cfg.extract === 'string') {
-    secondField = cfg.extract;
-  }
-
-  // Kind specific fallbacks for clean visual presentation matching reference prototype
-  switch (rule.kind) {
-    case 'dup-utr':
-      bankField = bankField || 'bank_reference';
-      secondSource = secondSource || 'Prior Runs';
-      secondField = secondField || 'matched_utr';
-      break;
-    case 'expected-utr':
-      bankField = bankField || 'utr_number';
-      secondSource = secondSource || 'Expected Remittances';
-      secondField = secondField || 'utr_number';
-      break;
-    case 'account-ifsc':
-      bankField = bankField || 'payer_account_no & ifsc';
-      secondSource = secondSource || 'Customer Master';
-      secondField = secondField || 'bank_account_no & ifsc_code';
-      break;
-    case 'upi':
-      bankField = bankField || 'vpa';
-      secondSource = secondSource || 'Customer Master';
-      secondField = secondField || 'vpa_handle';
-      break;
-    case 'customer-code':
-      bankField = bankField || 'narration';
-      secondSource = secondSource || 'Customer Reference Codes';
-      secondField = secondField || 'customer_code';
-      break;
-    case 'gstin-pan':
-      bankField = bankField || 'narration';
-      secondSource = secondSource || 'Customer Master';
-      secondField = secondField || 'gstin / pan';
-      break;
-    case 'fuzzy-name':
-      bankField = bankField || 'payer_name';
-      secondSource = secondSource || 'Customer Master';
-      secondField = secondField || 'company_name';
-      break;
-    case 'account-suffix':
-      bankField = bankField || 'account_suffix';
-      secondSource = secondSource || 'Customer Master';
-      secondField = secondField || 'bank_account_no';
-      break;
-    case 'narration-tokens':
-      bankField = bankField || 'narration_tokens';
-      secondSource = secondSource || 'Customer Master';
-      secondField = secondField || 'company_name';
-      break;
-    case 'exact-invoice-num':
-      bankField = bankField || 'narration';
-      secondSource = secondSource || 'Sub-Ledger (Invoice)';
-      secondField = secondField || 'invoice_number';
-      break;
-    case 'invoice-suffix':
-      bankField = bankField || 'narration';
-      secondSource = secondSource || 'Sub-Ledger (Invoice)';
-      secondField = secondField || 'invoice_number_suffix';
-      break;
-    case 'exact-amount':
-      bankField = bankField || 'amount';
-      secondSource = secondSource || 'Sub-Ledger (Invoice)';
-      secondField = secondField || 'invoice_amount';
-      break;
-    case 'tds-match':
-      bankField = bankField || 'amount + tds';
-      secondSource = secondSource || 'Sub-Ledger (Invoice)';
-      secondField = secondField || 'invoice_amount';
-      break;
-    case 'subset-sum':
-      bankField = bankField || 'amount';
-      secondSource = secondSource || 'Sub-Ledger (Invoice)';
-      secondField = secondField || 'sum(invoice_amounts)';
-      break;
-    case 'bank-fee':
-      bankField = bankField || 'amount + fee';
-      secondSource = secondSource || 'Sub-Ledger (Invoice)';
-      secondField = secondField || 'invoice_amount';
-      break;
-    case 'write-off':
-      bankField = bankField || 'amount';
-      secondSource = secondSource || 'Sub-Ledger (Invoices)';
-      secondField = secondField || 'effective_balance';
-      break;
-    case 'overpayment':
-      bankField = bankField || 'excess_amount';
-      secondSource = secondSource || 'Customer Master';
-      secondField = secondField || 'on_account_credit';
-      break;
-    case 'partial-payment':
-      bankField = bankField || 'partial_amount';
-      secondSource = secondSource || 'Sub-Ledger (Invoice)';
-      secondField = secondField || 'invoice_balance';
-      break;
-    case 'period-cutoff-guard':
-      bankField = bankField || 'due_date';
-      secondSource = secondSource || 'Period Control';
-      secondField = secondField || 'lte_period_end';
-      break;
-    case 'memo-netoff-guard':
-      bankField = bankField || 'memo_date';
-      secondSource = secondSource || 'Credit/Debit Memos';
-      secondField = secondField || 'lte_period_end';
-      break;
-    default:
-      bankField = bankField || 'narration';
-      secondSource = secondSource || 'Sub-Ledger (Invoice)';
-      secondField = secondField || 'invoice_number';
-  }
-
+  let bankField = rule.bankField || cfg.location || cfg.bankField || cfg.bank_field || 'narration';
+  let secondField = rule.secondField || cfg.match_field || cfg.secondField || 'invoice_number';
+  let secondSource = rule.secondSource || cfg.source || cfg.secondSource || 'Sub-Ledger';
   return { bankField, secondSource, secondField };
 }
 
@@ -322,159 +203,128 @@ interface ARRuleCardProps {
   total: number;
   matchedCount?: number;
   ruleNumberStr: string;
-  isEditing: boolean;
-  onToggleEdit: () => void;
+  isSelected: boolean;
+  isPanelOpen: boolean;
+  onSelect: () => void;
   onToggleEnable: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
-  onUpdateRule: (updated: ARRule) => void;
 }
 
 export const ARRuleCard: React.FC<ARRuleCardProps> = ({
   rule,
   index,
   total,
-  matchedCount,
+  matchedCount = 1,
   ruleNumberStr,
-  isEditing,
-  onToggleEdit,
+  isSelected,
+  isPanelOpen,
+  onSelect,
   onToggleEnable,
   onMoveUp,
   onMoveDown,
-  onUpdateRule,
 }) => {
-  const [draftRule, setDraftRule] = useState<ARRule>(rule);
-
-  // Sync draft with external rule changes when not actively editing
-  useEffect(() => {
-    if (!isEditing) {
-      setDraftRule(rule);
-    }
-  }, [rule, isEditing]);
-
   const meta: RuleMeta = RULE_METADATA[rule.kind] || {
     label: rule.name,
     description: rule.config?.description || 'Applies automated matching rule logic against incoming transaction stream.',
   };
 
-  const { bankField, secondField } = getRuleDisplayFields(rule);
-  const displayPriority = rule.priority !== undefined && rule.priority !== null ? rule.priority : index + 1;
-
-  const handleDoneClick = () => {
-    if (isEditing) {
-      // Check if draftRule actually changed compared to incoming rule
-      const hasChanged = JSON.stringify(draftRule) !== JSON.stringify(rule);
-      if (hasChanged) {
-        onUpdateRule(draftRule);
-      }
-      onToggleEdit();
-    } else {
-      setDraftRule(rule);
-      onToggleEdit();
-    }
-  };
+  const confidenceVal = rule.confidence ?? 95;
 
   return (
     <div
-      className={`bg-white border border-slate-200 rounded-xl overflow-hidden transition-all shadow-2xs ${
-        !rule.enabled ? 'opacity-60' : ''
-      } ${isEditing ? 'ring-1 ring-indigo-600 border-indigo-600' : ''}`}
+      onClick={onSelect}
+      className={`rs-rule-row select-none transition-all ${!rule.enabled ? 'opacity-55' : ''
+        } ${isSelected ? 'selected' : ''}`}
     >
-      <div className="flex items-start gap-3 px-4 py-3.5 select-none">
-        {/* Reorder Up/Down arrows */}
-        <div className="flex flex-col text-slate-300 mt-0.5 flex-none">
-          <button
-            type="button"
-            onClick={onMoveUp}
-            disabled={index === 0}
-            className={`hover:text-slate-700 transition-colors ${index === 0 ? 'invisible' : ''}`}
-            title="Move rule up"
-          >
-            <ChevronUp className="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={onMoveDown}
-            disabled={index === total - 1}
-            className={`hover:text-slate-700 transition-colors ${
-              index === total - 1 ? 'invisible' : ''
+      {/* Reorder Up/Down arrows */}
+      <div
+        className="flex flex-col text-slate-300 flex-none opacity-40 hover:opacity-100 transition-opacity"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          onClick={onMoveUp}
+          disabled={index === 0}
+          className={`hover:text-slate-700 leading-none p-0.5 ${index === 0 ? 'invisible' : ''}`}
+          title="Move rule up"
+        >
+          <ChevronUp className="w-3 h-3" />
+        </button>
+        <button
+          type="button"
+          onClick={onMoveDown}
+          disabled={index === total - 1}
+          className={`hover:text-slate-700 leading-none p-0.5 ${index === total - 1 ? 'invisible' : ''}`}
+          title="Move rule down"
+        >
+          <ChevronDown className="w-3 h-3" />
+        </button>
+      </div>
+
+      {/* Priority Badge Box (e.g. 3.1) */}
+      <span
+        className={`font-mono text-xs font-bold px-2 py-1 rounded-md flex-none border ${isSelected
+            ? 'bg-indigo-600 text-white border-indigo-600'
+            : 'bg-slate-100 text-slate-700 border-slate-200'
+          }`}
+      >
+        {ruleNumberStr}
+      </span>
+
+      {/* Title & Description */}
+      <div className="flex-1 min-w-0 flex items-center gap-2">
+        <span
+          className={`font-bold text-xs text-slate-900 ${isPanelOpen ? 'truncate flex-1 min-w-0' : 'flex-none'
             }`}
-            title="Move rule down"
+          title={rule.name}
+        >
+          {rule.name}
+        </span>
+        {!isPanelOpen && meta.description && (
+          <span
+            className="text-xs text-slate-500 font-normal truncate flex-1 min-w-0 hidden sm:inline"
+            title={meta.description}
           >
-            <ChevronDown className="w-3.5 h-3.5" />
-          </button>
+            {meta.description}
+          </span>
+        )}
+        {!isPanelOpen && matchedCount !== undefined && matchedCount > 0 && (
+          <span className="text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full font-mono flex-none border border-slate-200">
+            · {matchedCount}
+          </span>
+        )}
+      </div>
+
+      {/* Strictness / Confidence Badge (green document icon + %) */}
+      {!isPanelOpen && (
+        <div
+          className="flex items-center gap-1 font-mono font-bold text-xs text-emerald-700 bg-emerald-50/70 px-2 py-1 rounded-md border border-emerald-200 flex-none"
+          title="Required Match Confidence"
+        >
+          <Target className="w-3.5 h-3.5 text-emerald-600" />
+          {confidenceVal}%
         </div>
+      )}
 
-        {/* Priority Number */}
-        <div className="font-mono text-[12px] text-slate-400 w-4 mt-0.5 flex-none font-normal">
-          {displayPriority}
-        </div>
-
-        {/* Main Content Area */}
-        <div className="flex-1 min-w-0">
-          {/* Rule Title */}
-          <div className="font-bold text-[13px] text-slate-900 flex items-center gap-2 flex-wrap">
-            <span>
-              <span className="text-slate-400 font-normal">{ruleNumberStr}: </span>
-              {rule.name}
-            </span>
-            {matchedCount !== undefined && matchedCount > 0 && (
-              <span className="text-[11px] font-medium text-slate-500 font-mono">
-                · {matchedCount} matched
-              </span>
-            )}
-          </div>
-
-          {/* Description Line */}
-          {meta.description && (
-            <div className="mt-1 text-[12px] text-slate-500 leading-snug">
-              {meta.description}
-            </div>
-          )}
-
-          {/* Condition Chips Row matching prototype design */}
-          <div className="mt-2 flex items-center gap-1.5 flex-wrap">
-            {meta.customChips ? (
-              meta.customChips(rule)
-            ) : (
-              <>
-                <span className="chip font-semibold">{meta.label || rule.name}</span>
-                <span className="chip font-mono">{humanizeField(bankField)} ↔ {humanizeField(secondField)}</span>
-                {rule.confidence !== null && rule.confidence !== undefined && (
-                  <span className="chip font-medium">Confidence: {rule.confidence}%</span>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Right Actions */}
-        <div className="flex items-center gap-3 flex-none mt-0.5">
-          {rule.confidence !== null && rule.confidence !== undefined && (
-            <ConfidenceBar value={rule.confidence} />
-          )}
-
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleDoneClick}
-            className="text-xs font-semibold px-2.5 py-1 bg-slate-100 border border-slate-200 text-slate-700 hover:bg-slate-200 rounded-md"
+      {/* Active Status Text & Switch Toggle */}
+      <div
+        className="flex items-center gap-2 flex-none"
+        onClick={(e) => e.stopPropagation()}
+        title={rule.enabled ? 'Rule is Active' : 'Rule is Inactive'}
+      >
+        {!isPanelOpen && (
+          <span
+            className={`text-xs font-bold uppercase tracking-wider ${rule.enabled ? 'text-emerald-700' : 'text-slate-400'
+              }`}
           >
-            {isEditing ? 'Done' : 'Edit'}
-          </Button>
-
+            {rule.enabled ? 'ACTIVE' : 'OFF'}
+          </span>
+        )}
+        <div className="scale-95">
           <Switch checked={rule.enabled} onChange={onToggleEnable} />
         </div>
       </div>
-
-      {/* Expanded Rule Editor */}
-      {isEditing && (
-        <ARRuleEditor
-          rule={draftRule}
-          matchedCount={matchedCount}
-          onUpdateRule={setDraftRule}
-        />
-      )}
     </div>
   );
 };

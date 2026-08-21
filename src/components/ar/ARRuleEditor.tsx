@@ -159,7 +159,7 @@ const formatSecondSourceLabel = (s: string) => {
 
 export const ARRuleEditor: React.FC<ARRuleEditorProps> = ({
   rule,
-  matchedCount = 0,
+  matchedCount: _matchedCount = 0,
   onUpdateRule,
 }) => {
   const { bankField, secondSource, secondField } = getRuleDisplayFields(rule);
@@ -200,14 +200,6 @@ export const ARRuleEditor: React.FC<ARRuleEditorProps> = ({
 
   return (
     <div className="border-t border-slate-200 px-5 py-4 bg-slate-50/70 flex flex-col gap-4 text-xs fade-in">
-      {/* Live Match Count Banner */}
-      <div className="-mt-0.5 text-[11.5px] text-slate-500 font-medium">
-        Live:{' '}
-        <span className={`font-mono font-semibold ${matchedCount ? 'text-emerald-700' : 'text-slate-400'}`}>
-          {matchedCount} matched
-        </span>{' '}
-        with these settings, in this run
-      </div>
 
       {/* Row 1: MATCHER & RULE NAME */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -242,15 +234,10 @@ export const ARRuleEditor: React.FC<ARRuleEditorProps> = ({
         <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
           COMPARES
         </label>
-        {rule.kind === 'dup-utr' ? (
-          <div className="text-[11.5px] text-slate-600 font-mono bg-slate-200/60 px-2.5 py-1.5 rounded-md inline-block">
-            Bank reference number (UTR) ↔ every other bank reference number in this run
-          </div>
-        ) : (
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <span className="bg-slate-200/70 border border-slate-200 px-3 py-1.5 rounded-lg text-slate-700 font-medium text-[11.5px]">
-              Bank Statement
-            </span>
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="bg-slate-200/70 border border-slate-200 px-3 py-1.5 rounded-lg text-slate-700 font-medium text-[11.5px]">
+            Bank Statement
+          </span>
 
             <select
               value={bankField}
@@ -307,7 +294,6 @@ export const ARRuleEditor: React.FC<ARRuleEditorProps> = ({
                 ))}
             </select>
           </div>
-        )}
       </div>
 
       {/* Row 3: TUNABLE PARAMETER & CONFIDENCE */}
@@ -324,7 +310,8 @@ export const ARRuleEditor: React.FC<ARRuleEditorProps> = ({
                 min={paramConfig.min ?? 0}
                 value={paramConfig.value}
                 onChange={(e) => paramConfig.onChange(Number(e.target.value))}
-                className="w-full bg-white border border-slate-200 rounded-lg px-3 h-9 text-xs font-semibold text-slate-900 focus:outline-none focus:border-indigo-600 shadow-2xs"
+                onWheel={(e) => e.currentTarget.blur()}
+                className="w-full bg-white border border-slate-200 rounded-lg px-3 h-9 text-xs font-semibold text-slate-900 focus:outline-none focus:border-indigo-600 shadow-2xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               />
             </div>
           ) : (

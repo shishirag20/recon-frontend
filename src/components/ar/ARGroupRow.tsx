@@ -24,8 +24,8 @@ interface ARGroupRowProps {
   allRules: ARRule[];
   isOpen: boolean;
   onToggleOpen: () => void;
-  editingRuleId: string | null;
-  onToggleEditRule: (id: string) => void;
+  selectedRuleId: string | null;
+  onSelectRule: (id: string | null) => void;
   onToggleEnableRule: (id: string) => void;
   onMoveRuleUp: (id: string) => void;
   onMoveRuleDown: (id: string) => void;
@@ -38,8 +38,8 @@ export const ARGroupRow: React.FC<ARGroupRowProps> = ({
   allRules,
   isOpen,
   onToggleOpen,
-  editingRuleId,
-  onToggleEditRule,
+  selectedRuleId,
+  onSelectRule,
   onToggleEnableRule,
   onMoveRuleUp,
   onMoveRuleDown,
@@ -113,8 +113,8 @@ export const ARGroupRow: React.FC<ARGroupRowProps> = ({
                     groupPriority={group.priority}
                     ruleNumbers={ruleNumbers}
                     showHeading={group.subPhases.length > 1}
-                    editingRuleId={editingRuleId}
-                    onToggleEditRule={onToggleEditRule}
+                    selectedRuleId={selectedRuleId}
+                    onSelectRule={onSelectRule}
                     onToggleEnableRule={onToggleEnableRule}
                     onMoveRuleUp={onMoveRuleUp}
                     onMoveRuleDown={onMoveRuleDown}

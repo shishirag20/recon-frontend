@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Topbar } from '../components/layout/Topbar';
 import { TabBar } from '../components/layout/TabBar';
 import { Button } from '../components/ui/Button';
@@ -30,7 +31,37 @@ interface AuditLogItem {
 }
 
 export const ReportsPage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<string>('summary');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabFromUrl = searchParams.get('tab');
+  const validTabs = ['summary', 'matched', 'exceptions', 'audit'];
+
+  const [activeTab, setActiveTabState] = useState<string>(() => {
+    if (tabFromUrl && validTabs.includes(tabFromUrl)) {
+      return tabFromUrl;
+    }
+    const saved = localStorage.getItem('reports_tab');
+    if (saved && validTabs.includes(saved)) {
+      return saved;
+    }
+    return 'summary';
+  });
+
+  useEffect(() => {
+    if (tabFromUrl && validTabs.includes(tabFromUrl) && tabFromUrl !== activeTab) {
+      setActiveTabState(tabFromUrl);
+    }
+  }, [tabFromUrl]);
+
+  const handleTabChange = (key: string) => {
+    setActiveTabState(key);
+    localStorage.setItem('reports_tab', key);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('tab', key);
+      return next;
+    }, { replace: true });
+  };
+
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [matchedStream, setMatchedStream] = useState<'bank-cash' | 'gateway' | 'gl'>('bank-cash');
@@ -242,7 +273,7 @@ export const ReportsPage: React.FC = () => {
         <TabBar
           tabs={tabs}
           activeTab={activeTab}
-          onTabChange={(key) => setActiveTab(key)}
+          onTabChange={handleTabChange}
         />
       </div>
 
