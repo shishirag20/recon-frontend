@@ -24,6 +24,11 @@ const PHASE_GROUPS: PhaseGroupMeta[] = [
         branchNote: 'only runs for rows Customer Identification couldn\'t lock',
         hint: 'Only runs if Customer Identification fails outright — narrows to a short list instead of guessing',
       },
+      {
+        key: 'narration-cross-check',
+        label: 'Invoice Narration Cross-Check Rules (Phase 1c)',
+        hint: 'Independently verifies the customer identified above against whatever invoice the transaction narration itself references — a separate check, not a competing identification signal, so it runs after Customer Identification and Candidate Pool have already had their turn for every row.',
+      },
     ],
   },
   {

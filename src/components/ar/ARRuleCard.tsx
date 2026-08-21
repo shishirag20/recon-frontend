@@ -3,191 +3,8 @@ import type { ARRule } from '../../types';
 import { Switch } from '../ui/Switch';
 import { ChevronUp, ChevronDown, Target } from 'lucide-react';
 
-interface RuleMeta {
-  label?: string;
-  description: string;
-}
 
-export interface RuleThresholdBadgeInfo {
-  label: string;
-  value: string;
-  color: string;
-}
-
-export function getRuleThresholdBadge(rule: ARRule): RuleThresholdBadgeInfo | null {
-  const cfg = rule.config || {};
-  const cond = rule.cond || {};
-
-  switch (rule.kind) {
-    case 'write-off': {
-      const rawVal =
-        cfg.amount?.value_minor ??
-        cfg.max_writeoff_amount ??
-        cfg.materiality_threshold ??
-        cond.amount?.value ??
-        500;
-      const val = typeof rawVal === 'number' && rawVal >= 100 ? rawVal / 100 : Number(rawVal);
-      return {
-        label: 'Materiality Threshold',
-        value: `≤ ₹${val.toFixed(2)}`,
-        color: 'bg-amber-50 text-amber-800 border-amber-200',
-      };
-    }
-    case 'bank-fee': {
-      const rawVal =
-        cfg.amount?.value_minor ??
-        cfg.max_fee_amount ??
-        cond.amount?.value ??
-        500;
-      const val = typeof rawVal === 'number' && rawVal >= 100 ? rawVal / 100 : Number(rawVal);
-      return {
-        label: 'Fee Variance Tolerance',
-        value: `± ₹${val.toFixed(2)}`,
-        color: 'bg-amber-50 text-amber-800 border-amber-200',
-      };
-    }
-    case 'tds-match': {
-      const rate = cfg.tds_rate_pct ?? cfg.rate_pct ?? cfg.default_tds_rate_pct ?? 10;
-      return {
-        label: 'TDS Deduction Rate',
-        value: `${rate}% TDS`,
-        color: 'bg-blue-50 text-blue-800 border-blue-200',
-      };
-    }
-    case 'subset-sum': {
-      const val = cfg.max_invoices ?? cfg.max_combo ?? cond.amount?.value ?? 10;
-      return {
-        label: 'Max Invoices Combo',
-        value: `≤ ${val} Invoices`,
-        color: 'bg-indigo-50 text-indigo-800 border-indigo-200',
-      };
-    }
-    case 'fuzzy-name': {
-      const val = cfg.min_similarity ? Math.round(cfg.min_similarity * 100) : rule.confidence || 85;
-      return {
-        label: 'Similarity Threshold',
-        value: `≥ ${val}% Sim`,
-        color: 'bg-purple-50 text-purple-800 border-purple-200',
-      };
-    }
-    case 'invoice-suffix':
-    case 'account-suffix': {
-      const val = cfg.min_length ?? cfg.suffix_length ?? 4;
-      return {
-        label: 'Min Suffix Digits',
-        value: `≥ ${val} Digits`,
-        color: 'bg-slate-100 text-slate-700 border-slate-200',
-      };
-    }
-    case 'threshold': {
-      let label = 'Tolerance Threshold';
-      if (rule.phase === 'short-pay') label = 'Shortfall Tolerance';
-      else if (rule.phase === 'unapplied') label = 'Unapplied Cash Limit';
-      else if (rule.phase === 'gl-check') label = 'GL Control Variance';
-      const rawVal = cfg.amount?.value_minor ?? cond.amount?.value ?? 0;
-      const val = typeof rawVal === 'number' && rawVal >= 100 ? rawVal / 100 : Number(rawVal);
-      return {
-        label,
-        value: `≤ ₹${val.toFixed(2)}`,
-        color: 'bg-amber-50 text-amber-800 border-amber-200',
-      };
-    }
-    default:
-      return null;
-  }
-}
-
-export const RULE_METADATA: Record<string, RuleMeta> = {
-  'expected-utr': {
-    label: 'Pre-Advised UTR Match',
-    description:
-      'Automatically matches incoming payments to customer records using the UTR details they pre-submitted in the portal / expected remittances feed.',
-  },
-  'account-ifsc': {
-    label: 'Payer Account & IFSC Match',
-    description:
-      'Automatically links incoming payments to customer accounts by verifying both their bank account number and IFSC code against saved records.',
-  },
-  upi: {
-    label: 'UPI Handle Match',
-    description:
-      "Automatically links incoming payments by matching the sender's UPI ID found in the transaction narration with the customer's saved UPI handle.",
-  },
-  'customer-code': {
-    label: 'Customer Code in Narration Match',
-    description:
-      "Automatically links incoming payments by identifying and matching the customer's unique code embedded within the bank transaction narration.",
-  },
-  'gstin-pan': {
-    label: 'Tax ID & PAN Match',
-    description:
-      "Automatically links incoming payments by extracting the customer's GSTIN or PAN from the bank transaction narration and matching it with saved records.",
-  },
-  'fuzzy-name': {
-    label: 'Company Name Match',
-    description:
-      "Automatically links incoming payments by performing a fuzzy match between the payer's name on the bank statement and the customer's saved company name.",
-  },
-  'account-suffix': {
-    label: 'Masked Account Suffix Match',
-    description:
-      "Automatically links incoming payments by comparing the last 4 digits of the payer's account number from the bank statement with saved customer records.",
-  },
-  'narration-tokens': {
-    label: 'Token-Based Narration Match',
-    description:
-      "Automatically links incoming payments by breaking down the transaction narration into tokens and matching them against the customer's saved company name.",
-  },
-  'exact-invoice-num': {
-    label: 'Exact Invoice Number Match',
-    description:
-      "Automatically matches a payment to an invoice by finding that invoice's exact number written in the bank transaction narration.",
-  },
-  'invoice-suffix': {
-    label: 'Truncated Invoice Number Match',
-    description:
-      "Automatically matches a payment to an invoice by finding a shortened or masked numeric suffix (e.g. '1046' from 'INV-XXXX1046', with 'X' masking characters and prefixes automatically stripped) in the bank narration.",
-  },
-  'exact-amount': {
-    label: 'Exact Amount Match',
-    description:
-      "Automatically matches a payment to an open invoice when the payment amount exactly equals the invoice's outstanding balance.",
-  },
-  'tds-match': {
-    label: 'TDS-Adjusted Amount Match',
-    description:
-      "Automatically matches a payment to an invoice when the shortfall exactly equals the customer's allowed tax-deducted-at-source (TDS) amount.",
-  },
-  'subset-sum': {
-    label: 'Subset Sum Invoice Match',
-    description:
-      'Automatically matches a single payment against a combination of several open invoices whose amounts add up to the payment received.',
-  },
-  'bank-fee': {
-    label: 'Bank Fee Variance Match',
-    description:
-      "Automatically matches a payment where Shortfall (Invoice Balance − Payment Received) equals the bank's explicit transfer fee or falls within configured fee tolerance, settling the invoice and booking the variance to Bank Charges GL.",
-  },
-  'write-off': {
-    label: 'Small Balance Write-Off',
-    description:
-      'Automatically closes out a residual invoice balance that falls below the configured materiality threshold, rather than leaving it open as a disputed shortfall.',
-  },
-  overpayment: {
-    label: 'Overpayment to On-Account Credit',
-    description:
-      'When payment cash exceeds open invoice balance, targets the closest invoice, fully settles it, and parks remaining excess cash as On-Account Advance Credit on the customer account.',
-  },
-  'partial-payment': {
-    label: 'Partial Payment Allocation (FIFO Fallback)',
-    description:
-      "Universal fallback when no earlier rule matches: applies incoming cash to the customer's oldest open invoice to reduce its balance, leaving the residual shortfall open.",
-  },
-  threshold: {
-    description:
-      'Automatically decides tolerance thresholds for exceptions and GL control checks.',
-  },
-};
+import { SlidersHorizontal } from 'lucide-react';
 
 export function getRuleDisplayFields(rule: ARRule) {
   const cfg = rule.config || {};
@@ -224,12 +41,33 @@ export const ARRuleCard: React.FC<ARRuleCardProps> = ({
   onMoveUp,
   onMoveDown,
 }) => {
-  const meta: RuleMeta = RULE_METADATA[rule.kind] || {
-    label: rule.name,
-    description: rule.config?.description || 'Applies automated matching rule logic against incoming transaction stream.',
-  };
+  const label = rule.name || 'Custom Match Rule';
+  const description = rule.config?.description || 'Applies automated matching rule logic against incoming transaction stream.';
 
   const confidenceVal = rule.confidence ?? 95;
+
+  let paramBadge = null;
+  const firstParam = rule.config?.parameters?.[0];
+  if (firstParam) {
+    const keys = firstParam.key.split('.');
+    let rawVal = rule.config;
+    for (const k of keys) {
+      if (rawVal === undefined || rawVal === null) break;
+      rawVal = rawVal[k];
+    }
+    let val = Number(rawVal);
+    if (firstParam.unit === 'minor_rupees' && !isNaN(val)) val = val / 100;
+    
+    if (!isNaN(val)) {
+      const displayVal = firstParam.displayFormat ? firstParam.displayFormat.replace('{value}', val) : String(val);
+      paramBadge = (
+        <div className="flex items-center gap-1 font-mono font-bold text-[10px] text-amber-700 bg-amber-50 px-2 py-1 rounded-md border border-amber-200 flex-none" title={firstParam.label}>
+          <SlidersHorizontal className="w-3.5 h-3.5 text-amber-600" />
+          {firstParam.shortLabel || 'PARAM'}: {displayVal}
+        </div>
+      );
+    }
+  }
 
   return (
     <div
@@ -275,18 +113,18 @@ export const ARRuleCard: React.FC<ARRuleCardProps> = ({
       {/* Title & Description */}
       <div className="flex-1 min-w-0 flex items-center gap-2">
         <span
-          className={`font-bold text-xs text-slate-900 ${isPanelOpen ? 'truncate flex-1 min-w-0' : 'flex-none'
+          className={`font-semibold text-xs truncate max-w-full ${rule.enabled ? 'text-slate-800' : 'text-slate-500'
             }`}
           title={rule.name}
         >
-          {rule.name}
+          {label}
         </span>
-        {!isPanelOpen && meta.description && (
+        {!isPanelOpen && description && (
           <span
             className="text-xs text-slate-500 font-normal truncate flex-1 min-w-0 hidden sm:inline"
-            title={meta.description}
+            title={description}
           >
-            {meta.description}
+            {description}
           </span>
         )}
         {!isPanelOpen && matchedCount !== undefined && matchedCount > 0 && (
@@ -296,14 +134,17 @@ export const ARRuleCard: React.FC<ARRuleCardProps> = ({
         )}
       </div>
 
-      {/* Strictness / Confidence Badge (green document icon + %) */}
+      {/* Param Badge & Confidence Badge */}
       {!isPanelOpen && (
-        <div
-          className="flex items-center gap-1 font-mono font-bold text-xs text-emerald-700 bg-emerald-50/70 px-2 py-1 rounded-md border border-emerald-200 flex-none"
-          title="Required Match Confidence"
-        >
-          <Target className="w-3.5 h-3.5 text-emerald-600" />
-          {confidenceVal}%
+        <div className="flex items-center gap-2 flex-none">
+          {paramBadge}
+          <div
+            className="flex items-center gap-1 font-mono font-bold text-xs text-emerald-700 bg-emerald-50/70 px-2 py-1 rounded-md border border-emerald-200"
+            title="Required Match Confidence"
+          >
+            <Target className="w-3.5 h-3.5 text-emerald-600" />
+            {confidenceVal}%
+          </div>
         </div>
       )}
 

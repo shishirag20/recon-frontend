@@ -2,13 +2,7 @@ import { arService, type RuleCategory } from '../services/ar.service';
 import type { ARRule } from '../types';
 
 let cachedDataSources: string[] = ['Bank Statement', 'Customers', 'Expected Remittances', 'Sub-Ledger', 'General Ledger'];
-let cachedFieldsByEntity: Record<string, string[]> = {
-  'Bank Statement': ['bank_reference', 'narration', 'amount_minor', 'payer_name', 'payer_account_no', 'payer_ifsc', 'bank_txn_id', 'post_date', 'value_date', 'payer_account_no, payer_ifsc'],
-  'Customers': ['customer_code', 'customer_name', 'company_name', 'account_number', 'ifsc_code', 'vpa_handle', 'gstin', 'pan', 'account_number, ifsc_code'],
-  'Expected Remittances': ['utr_number', 'expected_amount_minor', 'customer_id', 'status', 'reconciled', 'expected_date'],
-  'Sub-Ledger': ['invoice_number', 'total_amount_minor', 'balance_due_minor', 'allowed_tds_minor', 'customer_id', 'status', 'due_date'],
-  'General Ledger': ['control_account', 'balance_minor'],
-};
+let cachedFieldsByEntity: Record<string, string[]> = {};
 let cachedCategories: RuleCategory[] = [];
 
 export async function fetchDynamicDataSourcesAndFields(): Promise<{

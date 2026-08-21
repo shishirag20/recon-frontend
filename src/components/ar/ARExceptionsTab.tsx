@@ -5,7 +5,6 @@ import { Button } from '../ui/Button';
 import { ExceptionTypeBadge, exceptionTypeLabel } from '../ui/ExceptionTypeBadge';
 import { Search, Check, X } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
-import { RULE_METADATA } from './ARRuleCard';
 import type { ExceptionOut, MatchGroupOut, ARRule, RunOut, PaymentOut, InvoiceSummaryOut } from '../../types';
 
 interface ARExceptionsTabProps {
@@ -150,7 +149,7 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ run, exception
     if (!ruleId) return 'No rule (fallback)';
     const rule = rulesById[ruleId];
     if (!rule) return shortIdRule(ruleId);
-    return RULE_METADATA[rule.kind]?.label || rule.name || rule.kind;
+    return rule.name || rule.kind;
   };
 
   const matchesByGroupId = useMemo(() => {

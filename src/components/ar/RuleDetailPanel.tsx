@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { ARRule } from '../../types';
 import { PipelineBlock, type PipelineBlockData } from './PipelineBlock';
-import { getPipelineForKind } from '../../utils/rulePipelines';
+
 import {
   fetchDynamicDataSourcesAndFields,
   getCachedDataSources,
@@ -9,7 +9,6 @@ import {
   resolveDatasetsForRule,
 } from '../../utils/dataSources';
 import { X, Pencil, Save, Target, Table, Sparkles, Check, ArrowLeftRight, AlertTriangle, ChevronDown, FileText, SlidersHorizontal } from 'lucide-react';
-import { RULE_METADATA } from './ARRuleCard';
 
 interface RuleDetailPanelProps {
   rule: ARRule;
@@ -33,213 +32,52 @@ export interface RuleThresholdParam {
   onChange: (val: number) => void;
 }
 
-export function getRuleThresholdParams(
+export function resolveParametersFromConfig(
   rule: ARRule,
   updateFn: (updater: (prev: ARRule) => ARRule) => void
 ): RuleThresholdParam[] {
   const cfg = rule.config || {};
-  const cond = rule.cond || {};
+  const parameters = cfg.parameters || [];
+  
+  return parameters.map((param: any) => {
+    // Resolve the value from the config using the key path (e.g. "amount.value_minor" -> cfg.amount.value_minor)
+    const keys = param.key.split('.');
+    let rawVal = cfg;
+    for (const k of keys) {
+      if (rawVal === undefined || rawVal === null) break;
+      rawVal = rawVal[k];
+    }
+    
+    // Convert minor_rupees to actual rupees for display
+    let val = Number(rawVal);
+    if (param.unit === 'minor_rupees' && !isNaN(val)) {
+      val = val / 100;
+    }
 
-  switch (rule.kind) {
-    case 'write-off': {
-      const rawVal =
-        cfg.amount?.value_minor ??
-        cfg.max_writeoff_amount ??
-        cfg.materiality_threshold ??
-        cond.amount?.value ??
-        500;
-      const val = typeof rawVal === 'number' && rawVal >= 100 ? rawVal / 100 : Number(rawVal);
-      return [
-        {
-          key: 'materiality_threshold',
-          label: 'Materiality Write-Off Limit',
-          shortLabel: 'LIMIT',
-          value: val,
-          displayValue: `≤ ₹${val.toFixed(2)}`,
-          unit: '₹',
-          step: 0.1,
-          min: 0,
-          helperText: 'Residual invoice balances at or below this threshold are automatically written off.',
-          onChange: (newVal) => {
-            const minor = Math.round(newVal * 100);
-            updateFn((prev) => ({
-              ...prev,
-              config: {
-                ...(prev.config || {}),
-                amount: { mode: 'tolerance', value_minor: minor },
-                max_writeoff_amount: minor,
-                materiality_threshold: minor,
-              },
-              cond: { ...(prev.cond || {}), amount: { mode: 'abs', value: minor } },
-            }));
-          },
-        },
-      ];
-    }
-    case 'bank-fee': {
-      const rawVal =
-        cfg.amount?.value_minor ??
-        cfg.max_fee_amount ??
-        cond.amount?.value ??
-        500;
-      const val = typeof rawVal === 'number' && rawVal >= 100 ? rawVal / 100 : Number(rawVal);
-      return [
-        {
-          key: 'fee_tolerance',
-          label: 'Fee Variance Tolerance',
-          shortLabel: 'TOLERANCE',
-          value: val,
-          displayValue: `± ₹${val.toFixed(2)}`,
-          unit: '₹',
-          step: 0.1,
-          min: 0,
-          helperText: 'Max allowable shortfall variance consistent with bank wire/transfer fees.',
-          onChange: (newVal) => {
-            const minor = Math.round(newVal * 100);
-            updateFn((prev) => ({
-              ...prev,
-              config: {
-                ...(prev.config || {}),
-                amount: { mode: 'tolerance', value_minor: minor },
-                max_fee_amount: minor,
-              },
-              cond: { ...(prev.cond || {}), amount: { mode: 'abs', value: minor } },
-            }));
-          },
-        },
-      ];
-    }
-    case 'subset-sum': {
-      const val = cfg.max_invoices ?? cfg.max_combo ?? cond.amount?.value ?? 10;
-      return [
-        {
-          key: 'max_invoices',
-          label: 'Max Combo Invoices',
-          shortLabel: 'MAX COMBO',
-          value: Number(val),
-          displayValue: `≤ ${val} Invoices`,
-          unit: 'Invoices',
-          step: 1,
-          min: 2,
-          max: 20,
-          helperText: 'Maximum number of open invoices searched in combinatorial subset sums.',
-          onChange: (newVal) => {
-            updateFn((prev) => ({
-              ...prev,
-              config: {
-                ...(prev.config || {}),
-                max_invoices: newVal,
-                max_combo: newVal,
-              },
-              cond: { ...(prev.cond || {}), amount: { mode: 'abs', value: newVal } },
-            }));
-          },
-        },
-      ];
-    }
-    case 'fuzzy-name': {
-      const val = cfg.min_similarity ? Math.round(cfg.min_similarity * 100) : rule.confidence || 85;
-      return [
-        {
-          key: 'min_similarity',
-          label: 'Match Similarity Threshold',
-          shortLabel: 'SIMILARITY',
-          value: Number(val),
-          displayValue: `≥ ${val}%`,
-          unit: '%',
-          step: 1,
-          min: 50,
-          max: 100,
-          helperText: 'Trigram string similarity score required to lock customer identity.',
-          onChange: (newVal) => {
-            updateFn((prev) => ({
-              ...prev,
-              config: {
-                ...(prev.config || {}),
-                min_similarity: newVal / 100,
-              },
-            }));
-          },
-        },
-      ];
-    }
-    case 'invoice-suffix':
-    case 'account-suffix': {
-      const val = cfg.min_length ?? cfg.suffix_length ?? 4;
-      return [
-        {
-          key: 'min_length',
-          label: 'Min Suffix Digits',
-          shortLabel: 'MIN DIGITS',
-          value: Number(val),
-          displayValue: `≥ ${val} Digits`,
-          unit: 'Digits',
-          step: 1,
-          min: 3,
-          max: 12,
-          helperText: 'Minimum count of trailing unmasked digits extracted from narration or account.',
-          onChange: (newVal) => {
-            updateFn((prev) => ({
-              ...prev,
-              config: {
-                ...(prev.config || {}),
-                min_length: newVal,
-                suffix_length: newVal,
-              },
-            }));
-          },
-        },
-      ];
-    }
-    case 'threshold': {
-      let label = 'Tolerance Threshold';
-      let shortLabel = 'THRESHOLD';
-      let helperText = 'Dispute threshold deciding when exceptions are flagged.';
-      if (rule.phase === 'short-pay') {
-        label = 'Shortfall Tolerance Limit';
-        shortLabel = 'SHORTFALL TOLERANCE';
-        helperText = 'Maximum allowable shortfall before raising a Short-Pay exception.';
-      } else if (rule.phase === 'unapplied') {
-        label = 'Unapplied Cash Limit';
-        shortLabel = 'UNAPPLIED LIMIT';
-        helperText = 'Maximum leftover cash balance permitted before raising an Unapplied Cash exception.';
-      } else if (rule.phase === 'gl-check') {
-        label = 'GL Control Variance Tolerance';
-        shortLabel = 'GL VARIANCE';
-        helperText = 'Permitted discrepancy gap between AR sub-ledger and GL control account.';
+    return {
+      ...param,
+      value: val,
+      displayValue: param.displayFormat ? param.displayFormat.replace('{value}', val) : String(val),
+      unit: param.unit === 'minor_rupees' ? '₹' : param.unit === 'percent' ? '%' : param.unit,
+      onChange: (newVal: number) => {
+        // Convert back to minor_rupees if needed
+        const storeVal = param.unit === 'minor_rupees' ? Math.round(newVal * 100) : newVal;
+        
+        updateFn((prev) => {
+          const newConfig = JSON.parse(JSON.stringify(prev.config || {}));
+          
+          let target = newConfig;
+          for (let i = 0; i < keys.length - 1; i++) {
+            if (!target[keys[i]]) target[keys[i]] = {};
+            target = target[keys[i]];
+          }
+          target[keys[keys.length - 1]] = storeVal;
+          
+          return { ...prev, config: newConfig };
+        });
       }
-
-      const rawVal = cfg.amount?.value_minor ?? cond.amount?.value ?? 0;
-      const val = typeof rawVal === 'number' && rawVal >= 100 ? rawVal / 100 : Number(rawVal);
-      return [
-        {
-          key: 'threshold_amount',
-          label,
-          shortLabel,
-          value: val,
-          displayValue: `≤ ₹${val.toFixed(2)}`,
-          unit: '₹',
-          step: 0.1,
-          min: 0,
-          helperText,
-          onChange: (newVal) => {
-            const minor = Math.round(newVal * 100);
-            updateFn((prev) => ({
-              ...prev,
-              config: {
-                ...(prev.config || {}),
-                amount: { mode: 'abs', value_minor: minor },
-                value_minor: minor,
-              },
-              cond: { ...(prev.cond || {}), amount: { mode: 'abs', value: minor } },
-            }));
-          },
-        },
-      ];
-    }
-    default:
-      return [];
-  }
+    };
+  });
 }
 
 const AccountingOutcomeBlock: React.FC<{ cards?: string[] }> = ({ cards }) => {
@@ -390,13 +228,10 @@ export const RuleDetailPanel: React.FC<RuleDetailPanelProps> = ({
     }
   };
 
-  const meta = RULE_METADATA[rule.kind] || {
-    label: rule.name,
-    description: rule.config?.description || 'Applies automated matching rule logic against incoming transaction stream.',
-  };
+  const description = draftRule?.config?.description || rule.config?.description || 'Applies automated matching rule logic against incoming transaction stream.';
 
   const pipelineBlocks: PipelineBlockData[] =
-    draftRule.config?.pipeline || rule.config?.pipeline || getPipelineForKind(rule.kind);
+    draftRule.config?.pipeline || rule.config?.pipeline || [];
 
   const handleUpdatePipelineBlock = (blkIdx: number, updatedBlk: PipelineBlockData) => {
     const nextPipeline = [...pipelineBlocks];
@@ -565,11 +400,11 @@ export const RuleDetailPanel: React.FC<RuleDetailPanelProps> = ({
             <span className="font-mono text-xs font-bold text-indigo-700 uppercase tracking-wide bg-indigo-50 px-2.5 py-0.5 rounded border border-indigo-200">
               {ruleLabel}
             </span>
-            <h4 className="font-bold text-base text-slate-900">{draftRule.name}</h4>
+            <h4 className="font-bold text-sm text-slate-900">{draftRule.name}</h4>
           </div>
-          {meta.description && (
-            <p className="text-xs text-slate-500 mt-1 leading-relaxed">{meta.description}</p>
-          )}
+          <p className="text-sm text-slate-500 max-w-2xl mt-1.5 leading-relaxed">
+            {description}
+          </p>
         </div>
 
         <div className="flex items-center gap-2.5 flex-none flex-wrap justify-end">
@@ -786,7 +621,7 @@ export const RuleDetailPanel: React.FC<RuleDetailPanelProps> = ({
 
             {/* Configured Thresholds & Tolerance Parameters Tile */}
             {(() => {
-              const thresholdParams = getRuleThresholdParams(draftRule, setDraftRule);
+              const thresholdParams = resolveParametersFromConfig(draftRule, setDraftRule);
               if (thresholdParams.length === 0) return null;
 
               return (

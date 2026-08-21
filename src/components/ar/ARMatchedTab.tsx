@@ -3,7 +3,6 @@ import { arService } from '../../services/ar.service';
 import { Button } from '../ui/Button';
 import { Undo2 } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
-import { RULE_METADATA } from './ARRuleCard';
 import type { GatewaySettlement, AREngineResult, RunOut, MatchGroupOut, ExceptionOut, ARRule } from '../../types';
 
 interface ARMatchedTabProps {
@@ -41,9 +40,8 @@ export const ARMatchedTab: React.FC<ARMatchedTabProps> = ({ run, matches, except
     return () => { cancelled = true; };
   }, []);
 
-  // Resolve match_group.rule_id -> a real, polished rule name (same
-  // RULE_METADATA Rules Studio itself uses) for the "Resolved Via" column,
-  // instead of a hardcoded placeholder string.
+  // Resolve match_group.rule_id -> a real, polished rule name
+  // Fallback to name or kind
   useEffect(() => {
     let cancelled = false;
     arService.getARRules().then((rules) => {
@@ -59,7 +57,7 @@ export const ARMatchedTab: React.FC<ARMatchedTabProps> = ({ run, matches, except
     if (!ruleId) return 'No rule (fallback)';
     const rule = rulesById[ruleId];
     if (!rule) return shortId(ruleId);
-    return RULE_METADATA[rule.kind]?.label || rule.name || rule.kind;
+    return rule.name || rule.kind;
   };
 
   const gatewaySettlements: GatewaySettlement[] = arResult?.gatewaySettlements || [];

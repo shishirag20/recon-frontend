@@ -10,145 +10,7 @@ interface ARRuleEditorProps {
   onUpdateRule: (updated: ARRule) => void;
 }
 
-interface RuleParamConfig {
-  label: string;
-  value: number;
-  step?: number;
-  min?: number;
-  onChange: (val: number) => void;
-}
-
-function getRuleParamConfig(rule: ARRule, onUpdateRule: (updated: ARRule) => void): RuleParamConfig | null {
-  switch (rule.kind) {
-    case 'write-off': {
-      const rawVal =
-        rule.config?.amount?.value_minor ??
-        rule.config?.max_writeoff_amount ??
-        rule.config?.materiality_threshold ??
-        rule.cond?.amount?.value ??
-        500;
-      const val = typeof rawVal === 'number' && rawVal >= 100 ? rawVal / 100 : Number(rawVal);
-      return {
-        label: 'MATERIALITY THRESHOLD',
-        value: val,
-        step: 0.1,
-        min: 0,
-        onChange: (newVal) => {
-          const minor = Math.round(newVal * 100);
-          const newConfig = {
-            ...(rule.config || {}),
-            amount: { mode: 'tolerance', value_minor: minor },
-            max_writeoff_amount: minor,
-            materiality_threshold: minor,
-          };
-          onUpdateRule({
-            ...rule,
-            config: newConfig,
-            cond: { ...(rule.cond || {}), amount: { mode: 'abs', value: minor } },
-          });
-        },
-      };
-    }
-    case 'bank-fee': {
-      const rawVal =
-        rule.config?.amount?.value_minor ??
-        rule.config?.max_fee_amount ??
-        rule.cond?.amount?.value ??
-        100;
-      const val = typeof rawVal === 'number' && rawVal >= 100 ? rawVal / 100 : Number(rawVal);
-      return {
-        label: 'VARIANCE TOLERANCE',
-        value: val,
-        step: 0.1,
-        min: 0,
-        onChange: (newVal) => {
-          const minor = Math.round(newVal * 100);
-          const newConfig = {
-            ...(rule.config || {}),
-            amount: { mode: 'tolerance', value_minor: minor },
-            max_fee_amount: minor,
-          };
-          onUpdateRule({
-            ...rule,
-            config: newConfig,
-            cond: { ...(rule.cond || {}), amount: { mode: 'abs', value: minor } },
-          });
-        },
-      };
-    }
-    case 'subset-sum': {
-      const val =
-        rule.config?.max_invoices ??
-        rule.config?.max_combo ??
-        rule.cond?.amount?.value ??
-        3;
-      return {
-        label: 'MAX COMBO SIZE',
-        value: Number(val),
-        step: 1,
-        min: 2,
-        onChange: (newVal) => {
-          const newConfig = {
-            ...(rule.config || {}),
-            max_invoices: newVal,
-            max_combo: newVal,
-          };
-          onUpdateRule({
-            ...rule,
-            config: newConfig,
-            cond: { ...(rule.cond || {}), amount: { mode: 'abs', value: newVal } },
-          });
-        },
-      };
-    }
-    case 'fuzzy-name': {
-      const val = rule.config?.min_similarity
-        ? Math.round(rule.config.min_similarity * 100)
-        : rule.confidence || 85;
-      return {
-        label: 'MATCH THRESHOLD (%)',
-        value: Number(val),
-        step: 1,
-        min: 50,
-        onChange: (newVal) => {
-          const newConfig = {
-            ...(rule.config || {}),
-            min_similarity: newVal / 100,
-          };
-          onUpdateRule({ ...rule, config: newConfig });
-        },
-      };
-    }
-    case 'threshold': {
-      let label = 'THRESHOLD';
-      if (rule.phase === 'short-pay') label = 'SHORTFALL TOLERANCE';
-      else if (rule.phase === 'unapplied') label = 'UNAPPLIED CASH THRESHOLD';
-      else if (rule.phase === 'gl-check') label = 'GL CONTROL VARIANCE TOLERANCE';
-      const rawVal = rule.config?.amount?.value_minor ?? rule.cond?.amount?.value ?? 0;
-      const val = typeof rawVal === 'number' && rawVal >= 100 ? rawVal / 100 : Number(rawVal);
-      return {
-        label,
-        value: val,
-        step: 0.1,
-        min: 0,
-        onChange: (newVal) => {
-          const minor = Math.round(newVal * 100);
-          const newConfig = {
-            ...(rule.config || {}),
-            amount: { mode: 'abs', value_minor: minor },
-          };
-          onUpdateRule({
-            ...rule,
-            config: newConfig,
-            cond: { ...(rule.cond || {}), amount: { mode: 'abs', value: minor } },
-          });
-        },
-      };
-    }
-    default:
-      return null;
-  }
-}
+import { resolveParametersFromConfig } from './RuleDetailPanel';
 
 const formatSecondSourceLabel = (s: string) => {
   if (s.toLowerCase().includes('invoice') || s === 'invoice') return 'Sub-Ledger (Invoices)';
@@ -196,7 +58,9 @@ export const ARRuleEditor: React.FC<ARRuleEditorProps> = ({
     onUpdateRule({ ...rule, confidence: Number(e.target.value) });
   };
 
-  const paramConfig = getRuleParamConfig(rule, onUpdateRule);
+  const params = resolveParametersFromConfig(rule, (updater) => {
+    onUpdateRule(updater(rule));
+  });
 
   return (
     <div className="border-t border-slate-200 px-5 py-4 bg-slate-50/70 flex flex-col gap-4 text-xs fade-in">
@@ -299,24 +163,27 @@ export const ARRuleEditor: React.FC<ARRuleEditorProps> = ({
       {/* Row 3: TUNABLE PARAMETER & CONFIDENCE */}
       <div className="pt-2 border-t border-slate-200/80 space-y-2">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
-          {paramConfig ? (
-            <div>
+          {params.map((param) => (
+            <div key={param.key}>
               <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                {paramConfig.label}
+                {param.label}
               </label>
-              <input
-                type="number"
-                step={paramConfig.step ?? 0.1}
-                min={paramConfig.min ?? 0}
-                value={paramConfig.value}
-                onChange={(e) => paramConfig.onChange(Number(e.target.value))}
-                onWheel={(e) => e.currentTarget.blur()}
-                className="w-full bg-white border border-slate-200 rounded-lg px-3 h-9 text-xs font-semibold text-slate-900 focus:outline-none focus:border-indigo-600 shadow-2xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-              />
+              <div className="flex items-center gap-1">
+                {param.unit === '₹' && <span className="text-xs font-bold text-slate-700">₹</span>}
+                <input
+                  type="number"
+                  step={param.step ?? 0.1}
+                  min={param.min ?? 0}
+                  max={param.max}
+                  value={param.value}
+                  onChange={(e) => param.onChange(Number(e.target.value))}
+                  onWheel={(e) => e.currentTarget.blur()}
+                  className="w-full bg-white border border-slate-200 rounded-lg px-3 h-9 text-xs font-semibold text-slate-900 focus:outline-none focus:border-indigo-600 shadow-2xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                />
+                {param.unit !== '₹' && <span className="text-xs font-bold text-slate-700">{param.unit}</span>}
+              </div>
             </div>
-          ) : (
-            <div />
-          )}
+          ))}
 
           {rule.confidence !== null && rule.confidence !== undefined && (
             <div>
