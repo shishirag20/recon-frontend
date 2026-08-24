@@ -89,6 +89,21 @@ export const reconciliationsService = {
     });
   },
 
+  /**
+   * DEV-ONLY: resets this definition's entire reconciliation state (every
+   * run/match/exception/GL posting, invoice balances, bank statuses) and
+   * enqueues a fresh run - for re-testing against the same source data
+   * without manual cleanup. Destructive, irreversible. Remove alongside the
+   * backend endpoint (grep "DEV-ONLY") when no longer needed.
+   */
+  async devRerun(id: string, periodStart?: string, periodEnd?: string): Promise<any> {
+    const validId = await resolveARDefinitionId(id);
+    return api.post(API_ROUTES.RECONCILIATIONS.RERUN_DEV(validId), {
+      period_start: periodStart || null,
+      period_end: periodEnd || null,
+    });
+  },
+
   async getRunStatus(runId: string): Promise<any> {
     return api.get(API_ROUTES.RECONCILIATIONS.RUN_STATUS(runId));
   },

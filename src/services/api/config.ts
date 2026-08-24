@@ -29,6 +29,10 @@ export const API_ROUTES = {
     // Same URL serves both POST (create/enqueue a run) and GET (list runs)
     // on the real backend - /reconciliations/{id}/runs, plural.
     RUNS: (id: string) => `/reconciliations/${id}/runs`,
+    // DEV-ONLY: wipes this definition's whole reconciliation history and
+    // enqueues a fresh run. Remove alongside the backend endpoint (grep
+    // "DEV-ONLY" in the recon backend) when it's no longer needed.
+    RERUN_DEV: (id: string) => `/reconciliations/${id}/rerun`,
     RUN_STATUS: (runId: string) => `/runs/${runId}`,
     RUN_RETRY: (runId: string) => `/runs/${runId}/retry`,
     RUN_MATCHES: (runId: string) => `/runs/${runId}/matches`,
@@ -47,7 +51,6 @@ export const API_ROUTES = {
     // Global per-stream mapping (BANK/INVOICE/CUSTOMER/...) - shared by every
     // data source/entity/org ingesting that stream, not scoped to one source.
     FIELD_MAPPINGS: (stream: string) => `/field-mappings/${stream}`,
-    FIELD_MAPPING_VERSIONS: (stream: string) => `/field-mappings/${stream}/versions`,
     FIELD_MAPPING_PREVIEW: (stream: string) => `/field-mappings/${stream}/preview`,
     FIELD_MAPPING_RESOLVE: (stream: string) => `/field-mappings/${stream}/resolve-headers`,
     FIELD_MAPPING_RESOLVE_MAPPING: (stream: string) => `/field-mappings/${stream}/resolve-mapping`,

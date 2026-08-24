@@ -82,11 +82,11 @@ export interface FieldMappingIn {
 export interface FieldMappingOut extends FieldMappingIn {
   mapping_id: string;
   stream: IngestionStream;
-  version: number;
   is_active: boolean;
 }
 
-export interface FieldMappingVersionCreate {
+// No version history (migration 0032) - a save replaces the whole set.
+export interface FieldMappingSet {
   mappings: FieldMappingIn[];
 }
 
@@ -140,7 +140,6 @@ export interface IngestionJobOut {
   attempt_count: number;
   max_attempts: number;
   last_error: string | null;
-  mapping_version: number | null;
   started_at: string; // ISO DateTime string
   failed_rows?: Record<string, unknown>[] | null;
 }

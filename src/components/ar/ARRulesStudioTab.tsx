@@ -42,8 +42,22 @@ const PHASE_GROUPS: PhaseGroupMeta[] = [
     ],
   },
   {
-    key: 'group-allocation',
+    key: 'group-narration-check',
     priority: 3,
+    label: 'Invoice Narration Cross-Check Rules (Phase 1c)',
+    description: 'Independently verifies the customer identified above against whatever invoice the transaction narration itself references — a separate check, not a competing identification signal, so it runs after Customer Identification and Candidate Pool have already had their turn for every row.',
+    example: 'Narration references INV-2026-102 (Bright Textiles), but the payment was locked to Nimbus Traders via UPI — flagged instead of silently trusting the lock.',
+    subPhases: [
+      {
+        key: 'narration-check',
+        label: 'Invoice Narration Cross-Check',
+        hint: 'Independently checks whether the narration references a real invoice belonging to a different customer than the one identified above — disagreement is flagged for review, never silently overridden.',
+      },
+    ],
+  },
+  {
+    key: 'group-allocation',
+    priority: 4,
     label: 'Financial Matching & Allocation Rules (Phase 2)',
     description: 'Governs how transaction amounts, fee deductions, and financial credits are mapped, distributed, and tied against a customer\'s open invoices or account balances.',
     example: 'Match exact invoice number found inside bank narration text.',
@@ -67,7 +81,7 @@ const PHASE_GROUPS: PhaseGroupMeta[] = [
   },
   {
     key: 'group-post',
-    priority: 4,
+    priority: 5,
     label: 'Ledger Settlement & Audit Rules (Post-Reconciliation)',
     description: 'Controls how finalized transactions post to sub-ledgers and general ledgers, manages timing schedules, and logs immutable compliance trails.',
     example: 'Flag GL control account variance exceeding tolerance.',
@@ -88,6 +102,7 @@ export const ARRulesStudioTab: React.FC = () => {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     'group-intake': true,
     'group-customer': true,
+    'group-narration-check': true,
     'group-allocation': true,
     'group-post': false,
   });

@@ -146,8 +146,13 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ run, exception
   }, []);
 
   const shortIdRule = (id: string) => `${id.slice(0, 8)}…`;
-  const ruleLabel = (ruleId: string | null): string => {
-    if (!ruleId) return 'No rule (fallback)';
+  // `rule_id` is null for two genuinely different reasons - a human manually
+  // matched it (match_type 'MANUAL'), or the no-customer direct-match path
+  // (engine.py's _commit_direct_match) closed it via a document/invoice
+  // number found directly in narration, with no customer ever identified to
+  // dispatch through a catalog rule at all. Neither is "no rule".
+  const ruleLabel = (ruleId: string | null, matchType?: string): string => {
+    if (!ruleId) return matchType === 'MANUAL' ? 'Manual Match' : 'Direct Invoice Match';
     const rule = rulesById[ruleId];
     if (!rule) return shortIdRule(ruleId);
     return RULE_METADATA[rule.kind]?.label || rule.name || rule.kind;
@@ -595,7 +600,10 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ run, exception
                 )}
                 <div className="text-[12.5px] text-slate-800">
                   <span className="font-semibold text-slate-900">
-                    {ruleLabel(matchesByGroupId[activeException.match_group_id].rule_id)}
+                    {ruleLabel(
+                      matchesByGroupId[activeException.match_group_id].rule_id,
+                      matchesByGroupId[activeException.match_group_id].match_type
+                    )}
                   </span>
                   {matchesByGroupId[activeException.match_group_id].reason && (
                     <div className="text-[11.5px] text-slate-500 font-normal mt-0.5">

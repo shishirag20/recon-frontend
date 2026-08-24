@@ -68,6 +68,11 @@ export const RULE_METADATA: Record<string, RuleMeta> = {
       </>
     ),
   },
+  'invoice-number-in-narration': {
+    label: 'Invoice Number in Narration',
+    description:
+      "Independently checks whether the transaction narration references a real invoice belonging to a different customer than the one Customer Identification / Candidate Pool already identified. Runs after both, for every row - a disagreement is flagged for review instead of letting the identified customer stand unquestioned.",
+  },
   'account-suffix': {
     label: 'Masked Account Suffix Match',
     description:

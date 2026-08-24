@@ -73,6 +73,7 @@ function normalizeRule(r: any): ARRule {
   const phaseMap: Record<string, string> = {
     CUSTOMER_LOCK: 'customer-lock',
     CANDIDATE_POOL: 'candidate-pool',
+    NARRATION_CHECK: 'narration-check',
     ALLOCATION: 'allocation',
     INTAKE_VALIDATION: 'intake',
     SHORT_PAY: 'short-pay',

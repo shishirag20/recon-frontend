@@ -122,7 +122,7 @@ export const JobsTab: React.FC<JobsTabProps> = ({
       // Persist whatever the user edited/AI-guessed in the modal before
       // uploading - previously this was silently discarded (the mappings
       // param went unused), so nothing typed in the modal ever reached the DB.
-      await fieldMappingService.createVersion(stream, mappings);
+      await fieldMappingService.saveMapping(stream, mappings);
       const job = await ingestionJobService.upload(sourceId, stream, file);
       setIsMappingModalOpen(false);
       setCreatedBatchJob(job);
