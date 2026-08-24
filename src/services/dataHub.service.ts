@@ -88,7 +88,7 @@ export const fieldMappingService = {
 
   async createVersion(stream: string, mappings: FieldMappingIn[]): Promise<FieldMappingOut[]> {
     fieldMappingsPromises.delete(stream);
-    return api.post<FieldMappingOut[]>(API_ROUTES.DATA_HUB.FIELD_MAPPING_VERSIONS(stream), { mappings });
+    return api.put<FieldMappingOut[]>(API_ROUTES.DATA_HUB.FIELD_MAPPINGS(stream), { mappings });
   },
 
   async preview(stream: string, payload: MappingPreviewRequest): Promise<MappingPreviewResponse> {

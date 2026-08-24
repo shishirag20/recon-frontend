@@ -94,19 +94,20 @@ export const RunReconciliationModal: React.FC<RunReconciliationModalProps> = ({
     [onRunComplete]
   );
 
-  const handleStart = async () => {
+  const handleStart = async (isRerun = false) => {
     setPhase({ type: 'STARTING' });
     try {
-      // Period dates are optional on the backend (RunCreate.period_start/
-      // period_end both default to None) - the period-cutoff-guard and
-      // Short-Pay/GL-check tolerances just don't get a period boundary to
-      // compare against when omitted. Temporarily not required here so a
-      // run can be started without picking dates first.
-      const run = await reconciliationsService.startRun(
-        definitionId,
-        periodStart || undefined,
-        periodEnd || undefined
-      );
+      const run = isRerun
+        ? await reconciliationsService.rerunRun(
+            definitionId,
+            periodStart || undefined,
+            periodEnd || undefined
+          )
+        : await reconciliationsService.startRun(
+            definitionId,
+            periodStart || undefined,
+            periodEnd || undefined
+          );
       // Run returns 202 QUEUED with run_id
       startPolling(run.id || run.run_id, run);
     } catch (e: any) {
@@ -158,7 +159,7 @@ export const RunReconciliationModal: React.FC<RunReconciliationModalProps> = ({
       return (
         <div className="flex flex-col gap-4 my-2">
           <p className="text-xs text-slate-500 leading-relaxed">
-            Optionally select a date window for this reconciliation run — leave blank to run against every open invoice regardless of period.
+            Optionally select a date window for this reconciliation run — leave blank to run against every bank statement regardless of period.
           </p>
 
           {/* Period Date Range */}
@@ -196,10 +197,17 @@ export const RunReconciliationModal: React.FC<RunReconciliationModalProps> = ({
             </div>
           </div>
 
-          <div className="flex justify-end mt-4">
+          <div className="flex justify-between items-center mt-4 pt-2 border-t border-slate-100">
+            <Button
+              variant="secondary"
+              onClick={() => handleStart(true)}
+              title="Reset previous run results & re-evaluate rule matches against existing data without deleting files"
+            >
+              Reset & Rerun Present Data
+            </Button>
             <Button
               variant="primary"
-              onClick={handleStart}
+              onClick={() => handleStart(false)}
             >
               Start Run
             </Button>

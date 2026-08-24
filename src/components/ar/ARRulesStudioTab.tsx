@@ -177,7 +177,7 @@ export const ARRulesStudioTab: React.FC = () => {
             kind: updated.kind,
             name: updated.name || 'New Custom Rule',
             priority: updated.priority || 10,
-            confidence: updated.confidence,
+            confidence: updated.confidence ?? undefined,
             config: updated.config || {}
           });
           setRules(prev => prev.map(r => r.id === updated.id ? created : r));

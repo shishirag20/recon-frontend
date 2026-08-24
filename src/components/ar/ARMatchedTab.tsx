@@ -44,20 +44,36 @@ export const ARMatchedTab: React.FC<ARMatchedTabProps> = ({ run, matches, except
   // Fallback to name or kind
   useEffect(() => {
     let cancelled = false;
-    arService.getARRules().then((rules) => {
+    const defId = run?.definition_id;
+    arService.getARRules(defId).then((rules) => {
       if (cancelled) return;
       const byId: Record<string, ARRule> = {};
-      rules.forEach((r) => { byId[r.id] = r; });
+      rules.forEach((r) => {
+        if (r.id) byId[r.id] = r;
+        if ((r as any).rule_id) byId[(r as any).rule_id] = r;
+      });
       setRulesById(byId);
     }).catch(() => { });
     return () => { cancelled = true; };
-  }, []);
+  }, [run?.definition_id]);
 
   const ruleLabel = (ruleId: string | null): string => {
     if (!ruleId) return 'No rule (fallback)';
     const rule = rulesById[ruleId];
-    if (!rule) return shortId(ruleId);
-    return rule.name || rule.kind;
+    if (rule) return rule.name || rule.kind;
+    const DEFAULT_RULE_NAMES: Record<string, string> = {
+      '226d65b3-2c1d-49b6-a492-2e8485a5dd1d': 'Pre-Advised UTR Match',
+      '65b7cc98-c74e-4670-ad48-5d9fa75fd6ef': 'Payer Account & IFSC Match',
+      '4be52354-6240-4246-b319-1a476d181647': 'UPI Handle Match',
+      'd3ea92dc-dcbc-4162-8fda-d69c1f1a59eb': 'Customer Code in Narration Match',
+      '68e95d8e-cabc-49f8-8d65-a928ce837a3b': 'Tax ID & PAN Match',
+      'ff3408cf-c92d-42ce-9dbf-53064cf01297': 'Company Name Match',
+      'cdd62e45-58e9-4df5-af8b-07e3a40121ee': 'Exact Amount Match',
+      'ebcd7e5c-56d0-4ff9-9c4e-b7a51e07540f': 'Partial Payment Allocation',
+      'd9d5631a-ee45-4880-bb19-d9c6f3cb93dd': 'Exact Invoice Number Match',
+    };
+    if (DEFAULT_RULE_NAMES[ruleId]) return DEFAULT_RULE_NAMES[ruleId];
+    return shortId(ruleId);
   };
 
   const gatewaySettlements: GatewaySettlement[] = arResult?.gatewaySettlements || [];
@@ -232,6 +248,7 @@ export const ARMatchedTab: React.FC<ARMatchedTabProps> = ({ run, matches, except
                   const isGrouped = group.allocations.length > 1;
                   const isChecked = selectedMatches.includes(group.match_group_id);
                   const bankTxnId = group.allocations[0]?.bank_txn_id ?? null;
+                  const docNumber = group.allocations[0]?.document_number ?? null;
                   const bankReference = group.allocations[0]?.bank_reference ?? null;
                   // The payment's own total received - not the sum of what got
                   // allocated, which under/overstates it for short-pay/overpay/fee
@@ -276,7 +293,7 @@ export const ARMatchedTab: React.FC<ARMatchedTabProps> = ({ run, matches, except
                           <td rowSpan={group.allocations.length} className="px-4 py-3.5 align-middle border-x border-slate-200">
                             <div className="grid grid-cols-2 gap-3 text-center items-center font-medium text-[13px] text-slate-900">
                               <div className="font-semibold text-slate-900" title={bankTxnId ?? undefined}>
-                                {bankReference || shortId(bankTxnId)}
+                                {docNumber || bankReference || shortId(bankTxnId)}
                               </div>
                               {/* The payment's own total received, not the sum of what
                                   got allocated across its invoice(s). */}

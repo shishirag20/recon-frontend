@@ -318,6 +318,8 @@ export interface AllocationOut {
   /** The payment's own total received - may exceed or fall short of allocated_minor (overpayment/short-pay/fee cases). */
   payment_amount_minor: number | null;
   bank_txn_id: string | null;
+  /** Document number / Bank Txn ID from source file (e.g. BANK-007) */
+  document_number?: string | null;
   /** Real bank reference/UTR from the source file - bank_txn_id is the internal generated row UUID. */
   bank_reference: string | null;
   /** How much of this payment was actually applied to this invoice. */
