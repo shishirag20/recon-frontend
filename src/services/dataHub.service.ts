@@ -3,7 +3,7 @@
  * 
  * Covers all DataHub API endpoints split into four domain groups:
  *  - dataSourceService  — Data Source registration & lookup
- *  - fieldMappingService — Active mappings fetch, save version + preview
+ *  - fieldMappingService — Active mappings fetch, save (full replace) + preview
  *  - ingestionJobService — File upload, list, poll, retry
  *  - recordsService      — List, get, and patch live canonical job records
  * 
@@ -86,9 +86,14 @@ export const fieldMappingService = {
     return promise;
   },
 
-  async createVersion(stream: string, mappings: FieldMappingIn[]): Promise<FieldMappingOut[]> {
+  /**
+   * PUT /field-mappings/{stream} — replaces the stream's entire mapping.
+   * True replace, not a merge: omit a row and it's gone. No version history
+   * (migration 0032) - this is the only representation of the mapping.
+   */
+  async saveMapping(stream: string, mappings: FieldMappingIn[]): Promise<FieldMappingOut[]> {
     fieldMappingsPromises.delete(stream);
-    return api.post<FieldMappingOut[]>(API_ROUTES.DATA_HUB.FIELD_MAPPING_VERSIONS(stream), { mappings });
+    return api.put<FieldMappingOut[]>(API_ROUTES.DATA_HUB.FIELD_MAPPINGS(stream), { mappings });
   },
 
   async preview(stream: string, payload: MappingPreviewRequest): Promise<MappingPreviewResponse> {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Topbar } from '../components/layout/Topbar';
 import { TabBar } from '../components/layout/TabBar';
 import { Button } from '../components/ui/Button';
@@ -12,7 +12,38 @@ import type { RunOut, MatchGroupOut, ExceptionOut } from '../types';
 
 export const ARWorkspacePage: React.FC = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<string>('matches');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabFromUrl = searchParams.get('tab');
+  const validTabs = ['matches', 'exceptions', 'rules'];
+
+  const [activeTab, setActiveTabState] = useState<string>(() => {
+    if (tabFromUrl && validTabs.includes(tabFromUrl)) {
+      return tabFromUrl;
+    }
+    const saved = localStorage.getItem('ar_workspace_tab');
+    if (saved && validTabs.includes(saved)) {
+      return saved;
+    }
+    return 'matches';
+  });
+
+  // Sync if URL search params change
+  useEffect(() => {
+    if (tabFromUrl && validTabs.includes(tabFromUrl) && tabFromUrl !== activeTab) {
+      setActiveTabState(tabFromUrl);
+    }
+  }, [tabFromUrl]);
+
+  const handleTabChange = (key: string) => {
+    setActiveTabState(key);
+    localStorage.setItem('ar_workspace_tab', key);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('tab', key);
+      return next;
+    }, { replace: true });
+  };
+
   const [run, setRun] = useState<RunOut | null>(null);
   const [matches, setMatches] = useState<MatchGroupOut[]>([]);
   const [exceptions, setExceptions] = useState<ExceptionOut[]>([]);
@@ -103,7 +134,7 @@ export const ARWorkspacePage: React.FC = () => {
         <TabBar
           tabs={tabs}
           activeTab={activeTab}
-          onTabChange={(key) => setActiveTab(key)}
+          onTabChange={handleTabChange}
         />
       </div>
 

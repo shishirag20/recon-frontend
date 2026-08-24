@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Topbar } from '../components/layout/Topbar';
 import { TabBar, type TabItem } from '../components/layout/TabBar';
 import { JobsTab } from '../components/data-hub/JobsTab';
@@ -21,7 +22,37 @@ const DATA_HUB_TABS: TabItem[] = [
 ];
 
 export const DataHubPage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState('jobs');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabFromUrl = searchParams.get('tab');
+  const validTabs = ['jobs', 'schemas', 'explorer'];
+
+  const [activeTab, setActiveTabState] = useState<string>(() => {
+    if (tabFromUrl && validTabs.includes(tabFromUrl)) {
+      return tabFromUrl;
+    }
+    const saved = localStorage.getItem('datahub_tab');
+    if (saved && validTabs.includes(saved)) {
+      return saved;
+    }
+    return 'jobs';
+  });
+
+  useEffect(() => {
+    if (tabFromUrl && validTabs.includes(tabFromUrl) && tabFromUrl !== activeTab) {
+      setActiveTabState(tabFromUrl);
+    }
+  }, [tabFromUrl]);
+
+  const handleTabChange = (key: string) => {
+    setActiveTabState(key);
+    localStorage.setItem('datahub_tab', key);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('tab', key);
+      return next;
+    }, { replace: true });
+  };
+
   const [mappings, setMappings] = useState<FieldMapping[]>([]);
 
   const { openModal, closeModal } = useModal();
@@ -85,7 +116,7 @@ export const DataHubPage: React.FC = () => {
 
   // ── Handler: view job details (switches to Data Explorer tab) ─────────────
   const handleViewJob = (_jobId: string) => {
-    setActiveTab('explorer');
+    handleTabChange('explorer');
   };
 
 
@@ -145,7 +176,7 @@ export const DataHubPage: React.FC = () => {
       <TabBar
         tabs={DATA_HUB_TABS}
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={handleTabChange}
       />
 
       <div className="flex-1 p-6 overflow-y-auto">

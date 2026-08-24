@@ -73,6 +73,7 @@ function normalizeRule(r: any): ARRule {
   const phaseMap: Record<string, string> = {
     CUSTOMER_LOCK: 'customer-lock',
     CANDIDATE_POOL: 'candidate-pool',
+    NARRATION_CROSS_CHECK: 'narration-cross-check',
     ALLOCATION: 'allocation',
     INTAKE_VALIDATION: 'intake',
     SHORT_PAY: 'short-pay',
@@ -120,6 +121,33 @@ export const arService = {
   },
 
   /**
+   * Create a new AR matching rule
+   */
+  async createARRule(
+    id: string,
+    payload: { phase: string; kind: string; name: string; priority: number; confidence?: number; config: any }
+  ): Promise<ARRule> {
+    const validId = await resolveARDefinitionId(id);
+    const reversePhaseMap: Record<string, string> = {
+      'customer-lock': 'CUSTOMER_LOCK',
+      'candidate-pool': 'CANDIDATE_POOL',
+      'narration-cross-check': 'NARRATION_CROSS_CHECK',
+      'allocation': 'ALLOCATION',
+      'intake': 'INTAKE_VALIDATION',
+      'short-pay': 'SHORT_PAY',
+      'unapplied': 'UNAPPLIED',
+      'gl-check': 'GL_CHECK',
+    };
+    const backendPhase = reversePhaseMap[payload.phase] || payload.phase.toUpperCase().replace(/-/g, '_');
+
+    const res = await api.post<any>(`/reconciliations/${validId}/rules`, {
+      ...payload,
+      phase: backendPhase
+    });
+    return normalizeRule(res);
+  },
+
+  /**
    * Update or toggle an AR matching rule
    */
   async updateARRule(id: string, rule: ARRule): Promise<ARRule> {
@@ -127,9 +155,33 @@ export const arService = {
     const ruleId = rule.id || (rule as any).rule_id;
     const res = await api.patch<any>(`/reconciliations/${validId}/rules/${ruleId}`, {
       enabled: rule.enabled,
+      confidence: rule.confidence,
+      name: rule.name,
       config: rule.config || rule.cond,
     });
     return normalizeRule(res);
+  },
+
+  /**
+   * Delete an AR matching rule
+   */
+  async deleteARRule(definitionId: string, ruleId: string): Promise<void> {
+    const validId = await resolveARDefinitionId(definitionId);
+    await api.delete(`/reconciliations/${validId}/rules/${ruleId}`);
+  },
+
+  /**
+   * Fetch matchers catalog
+   */
+  async getMatchers(): Promise<any> {
+    return api.get<any>('/reconciliations/matchers');
+  },
+
+  /**
+   * Fetch algorithms catalog
+   */
+  async getAlgorithms(): Promise<any> {
+    return api.get<any>('/reconciliations/algorithms');
   },
 
   /**
@@ -164,6 +216,13 @@ export const arService = {
   },
 
   /**
+   * Fetch valid rule data categories and canonical fields for Rule Studio UI
+   */
+  async getRuleCategories(): Promise<RuleCategoriesResponse> {
+    return api.get<RuleCategoriesResponse>('/reconciliations/rule-categories');
+  },
+
+  /**
    * Sign-off and lock an AR reconciliation period
    */
   async finishReconciliation(
@@ -174,3 +233,21 @@ export const arService = {
     return api.post(API_ROUTES.AR.SIGN_OFF(validId), { signedBy });
   },
 };
+
+export interface RuleCategoryField {
+  key: string;
+  label: string;
+  type: string;
+}
+
+export interface RuleCategory {
+  key: string;
+  label: string;
+  stream: string;
+  description: string;
+  fields: RuleCategoryField[];
+}
+
+export interface RuleCategoriesResponse {
+  categories: RuleCategory[];
+}

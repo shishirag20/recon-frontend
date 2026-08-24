@@ -1,29 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { arService } from '../../services/ar.service';
-import { resolveARDefinitionId } from '../../services/ar.service';
+import { arService, resolveARDefinitionId } from '../../services/ar.service';
 import type { ARRule } from '../../types';
 import { ARGroupRow, type PhaseGroupMeta } from './ARGroupRow';
 import { useToast } from '../../hooks/useToast';
-import { Loader2 } from 'lucide-react';
+import { Loader2, RotateCcw } from 'lucide-react';
 
 const PHASE_GROUPS: PhaseGroupMeta[] = [
   {
-    key: 'group-intake',
-    priority: 1,
-    label: 'Intake Validation Rules (Pre-Checks)',
-    description: 'Inspects incoming raw transaction feeds, filters out duplicates or already-processed rows, and validates data integrity before operational processing begins.',
-    example: 'Flag duplicate Bank Transaction UTR numbers before processing.',
-    subPhases: [
-      {
-        key: 'intake',
-        label: 'Intake Validation',
-        hint: 'Checks for duplicate UTRs, corrupted rows, and schema integrity.',
-      },
-    ],
-  },
-  {
     key: 'group-customer',
-    priority: 2,
+    priority: 1,
     label: 'Customer Identification Rules (Phase 1)',
     description: 'Determines, isolates, or verifies who the paying entity is — from high-confidence exact identifiers down to broader fallback and candidate-pooling strategies.',
     example: 'Match payer account number against Customer Master bank account number.',
@@ -42,8 +27,22 @@ const PHASE_GROUPS: PhaseGroupMeta[] = [
     ],
   },
   {
-    key: 'group-allocation',
+    key: 'group-narration-check',
     priority: 3,
+    label: 'Invoice Narration Cross-Check Rules (Phase 1c)',
+    description: 'Independently verifies the customer identified above against whatever invoice the transaction narration itself references — a separate check, not a competing identification signal, so it runs after Customer Identification and Candidate Pool have already had their turn for every row.',
+    example: 'Narration references INV-2026-102 (Bright Textiles), but the payment was locked to Nimbus Traders via UPI — flagged instead of silently trusting the lock.',
+    subPhases: [
+      {
+        key: 'narration-check',
+        label: 'Invoice Narration Cross-Check',
+        hint: 'Independently checks whether the narration references a real invoice belonging to a different customer than the one identified above — disagreement is flagged for review, never silently overridden.',
+      },
+    ],
+  },
+  {
+    key: 'group-allocation',
+    priority: 2,
     label: 'Financial Matching & Allocation Rules (Phase 2)',
     description: 'Governs how transaction amounts, fee deductions, and financial credits are mapped, distributed, and tied against a customer\'s open invoices or account balances.',
     example: 'Match exact invoice number found inside bank narration text.',
@@ -67,8 +66,8 @@ const PHASE_GROUPS: PhaseGroupMeta[] = [
   },
   {
     key: 'group-post',
-    priority: 4,
-    label: 'Ledger Settlement & Audit Rules (Post-Reconciliation)',
+    priority: 3,
+    label: 'Ledger Settlement & Audit Rules (Phase 3)',
     description: 'Controls how finalized transactions post to sub-ledgers and general ledgers, manages timing schedules, and logs immutable compliance trails.',
     example: 'Flag GL control account variance exceeding tolerance.',
     subPhases: [
@@ -86,12 +85,12 @@ export const ARRulesStudioTab: React.FC = () => {
   const [definitionId, setDefinitionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
-    'group-intake': true,
     'group-customer': true,
+    'group-narration-check': true,
     'group-allocation': true,
     'group-post': false,
   });
-  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+  const [selectedRuleId, setSelectedRuleId] = useState<string | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -104,7 +103,7 @@ export const ARRulesStudioTab: React.FC = () => {
         const res = await arService.getARRules(id);
         if (!cancelled) setRules(res);
       } catch {
-        // Silently fail — rules stay empty
+        // Silently fail
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -117,8 +116,11 @@ export const ARRulesStudioTab: React.FC = () => {
     setOpenGroups((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const handleToggleEditRule = (id: string) => {
-    setEditingRuleId((prev) => (prev === id ? null : id));
+  const handleSelectRule = (id: string | null) => {
+    if (selectedRuleId?.startsWith('NEW_RULE_') && id !== selectedRuleId) {
+      setRules((prev) => prev.filter((r) => r.id !== selectedRuleId));
+    }
+    setSelectedRuleId(id);
   };
 
   const handleToggleEnableRule = async (id: string) => {
@@ -126,9 +128,7 @@ export const ARRulesStudioTab: React.FC = () => {
     if (!target || !definitionId) return;
 
     const updated = { ...target, enabled: !target.enabled };
-    setRules((prev) =>
-      prev.map((r) => (r.id === id ? updated : r))
-    );
+    setRules((prev) => prev.map((r) => (r.id === id ? updated : r)));
 
     try {
       await arService.updateARRule(definitionId, updated);
@@ -179,13 +179,33 @@ export const ARRulesStudioTab: React.FC = () => {
   };
 
   const handleUpdateRule = async (updated: ARRule) => {
-    setRules((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
-    if (definitionId) {
-      try {
-        await arService.updateARRule(definitionId, updated);
-        toast('Rule saved successfully', 'ok');
-      } catch {
-        toast('Failed to save rule on server', 'bad');
+    if (updated.id.startsWith('NEW_RULE_')) {
+      if (definitionId) {
+        try {
+          const created = await arService.createARRule(definitionId, {
+            phase: updated.phase as string,
+            kind: updated.kind,
+            name: updated.name || 'New Custom Rule',
+            priority: updated.priority || 10,
+            confidence: updated.confidence ?? undefined,
+            config: updated.config || {}
+          });
+          setRules(prev => prev.map(r => r.id === updated.id ? created : r));
+          setSelectedRuleId(created.id);
+          toast('Rule created successfully', 'ok');
+        } catch (err: any) {
+          toast(err.response?.data?.detail || 'Failed to create rule', 'bad');
+        }
+      }
+    } else {
+      setRules((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+      if (definitionId) {
+        try {
+          await arService.updateARRule(definitionId, updated);
+          toast('Rule saved successfully', 'ok');
+        } catch {
+          toast('Failed to save rule on server', 'bad');
+        }
       }
     }
   };
@@ -193,30 +213,54 @@ export const ARRulesStudioTab: React.FC = () => {
   const handleAddRule = (phaseKey: string) => {
     const rulesInPhase = rules.filter((r) => r.phase === phaseKey);
     const newRule: ARRule = {
-      id: `rule-${phaseKey}-${Date.now()}`,
+      id: `NEW_RULE_${phaseKey}_${Date.now()}`,
       phase: phaseKey,
-      kind: 'threshold',
+      kind: phaseKey === 'intake' || phaseKey === 'customer-lock' || phaseKey === 'candidate-pool' || phaseKey === 'allocation' ? 'field-match' : 'threshold',
       name: `New Custom Rule ${rulesInPhase.length + 1}`,
       enabled: true,
       priority: (rulesInPhase[rulesInPhase.length - 1]?.priority ?? 0) + 10,
-      confidence: null,
+      confidence: 90,
       config: {},
     };
 
     setRules((prev) => [...prev, newRule]);
-    setEditingRuleId(newRule.id);
+    setSelectedRuleId(newRule.id);
+  };
+
+  const handleDeleteRule = async (ruleId: string) => {
+    if (!definitionId) return;
+    try {
+      await arService.deleteARRule(definitionId, ruleId);
+      setRules(prev => prev.filter(r => r.id !== ruleId));
+      if (selectedRuleId === ruleId) {
+        setSelectedRuleId(null);
+      }
+      toast('Rule deleted successfully', 'ok');
+    } catch {
+      toast('Failed to delete rule', 'bad');
+    }
   };
 
   return (
     <div className="p-6 space-y-5 fade-in w-full">
       {/* Header Bar */}
-      <div className="pb-1">
-        <h2 className="text-base font-bold text-slate-900 tracking-tight">
-          AR reconciliation rules
-        </h2>
-        <p className="text-xs text-slate-500 mt-1 max-w-3xl leading-relaxed">
-          Each phase runs its own cascading rule list, first match wins — edit, reorder, or enable/disable rules to see matching change live. Rules can never be deleted. This is what the reconciliation runs against.
-        </p>
+      <div className="flex items-start justify-between gap-4 pb-1">
+        <div>
+          <h2 className="text-base font-bold text-slate-900 tracking-tight">
+            AR reconciliation rules
+          </h2>
+          <p className="text-xs text-slate-500 mt-1 max-w-3xl leading-relaxed">
+            Each phase runs its own cascading rule list, first match wins — click any rule to view its full execution pipeline flow, rule outcome, and live sandbox. Rules can never be deleted.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => toast('Rules reset to defaults', 'default')}
+          className="px-3 py-1.5 bg-white border border-slate-200 hover:border-slate-300 text-slate-700 hover:text-slate-900 rounded-lg text-xs font-semibold shadow-2xs flex items-center gap-1.5 flex-none"
+        >
+          <RotateCcw className="w-3.5 h-3.5" /> Reset Defaults
+        </button>
       </div>
 
       {loading ? (
@@ -233,13 +277,14 @@ export const ARRulesStudioTab: React.FC = () => {
               allRules={rules}
               isOpen={!!openGroups[group.key]}
               onToggleOpen={() => handleToggleGroup(group.key)}
-              editingRuleId={editingRuleId}
-              onToggleEditRule={handleToggleEditRule}
+              selectedRuleId={selectedRuleId}
+              onSelectRule={handleSelectRule}
               onToggleEnableRule={handleToggleEnableRule}
               onMoveRuleUp={handleMoveRuleUp}
               onMoveRuleDown={handleMoveRuleDown}
               onUpdateRule={handleUpdateRule}
               onAddRule={handleAddRule}
+              onDeleteRule={handleDeleteRule}
             />
           ))}
         </div>

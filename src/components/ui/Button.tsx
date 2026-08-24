@@ -3,7 +3,7 @@ import { clsx } from 'clsx';
 import { Loader2 } from 'lucide-react';
 
 export interface ButtonProps {
-  variant?: 'primary' | 'ghost' | 'bad' | 'success' | 'warning' | 'ai';
+  variant?: 'primary' | 'secondary' | 'ghost' | 'bad' | 'success' | 'warning' | 'ai';
   size?: 'default' | 'sm' | 'xs';
   icon?: ComponentType<{ className?: string }>;
   iconRight?: ComponentType<{ className?: string }>;

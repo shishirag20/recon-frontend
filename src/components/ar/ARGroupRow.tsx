@@ -24,13 +24,14 @@ interface ARGroupRowProps {
   allRules: ARRule[];
   isOpen: boolean;
   onToggleOpen: () => void;
-  editingRuleId: string | null;
-  onToggleEditRule: (id: string) => void;
+  selectedRuleId: string | null;
+  onSelectRule: (id: string | null) => void;
   onToggleEnableRule: (id: string) => void;
   onMoveRuleUp: (id: string) => void;
   onMoveRuleDown: (id: string) => void;
   onUpdateRule: (r: ARRule) => void;
   onAddRule: (phaseKey: string) => void;
+  onDeleteRule: (id: string) => void;
 }
 
 export const ARGroupRow: React.FC<ARGroupRowProps> = ({
@@ -38,13 +39,14 @@ export const ARGroupRow: React.FC<ARGroupRowProps> = ({
   allRules,
   isOpen,
   onToggleOpen,
-  editingRuleId,
-  onToggleEditRule,
+  selectedRuleId,
+  onSelectRule,
   onToggleEnableRule,
   onMoveRuleUp,
   onMoveRuleDown,
   onUpdateRule,
   onAddRule,
+  onDeleteRule,
 }) => {
   // Compute flattened rule numbers across the whole group
   const ruleNumbers: Record<string, number> = {};
@@ -113,13 +115,14 @@ export const ARGroupRow: React.FC<ARGroupRowProps> = ({
                     groupPriority={group.priority}
                     ruleNumbers={ruleNumbers}
                     showHeading={group.subPhases.length > 1}
-                    editingRuleId={editingRuleId}
-                    onToggleEditRule={onToggleEditRule}
+                    selectedRuleId={selectedRuleId}
+                    onSelectRule={onSelectRule}
                     onToggleEnableRule={onToggleEnableRule}
                     onMoveRuleUp={onMoveRuleUp}
                     onMoveRuleDown={onMoveRuleDown}
                     onUpdateRule={onUpdateRule}
                     onAddRule={onAddRule}
+                    onDeleteRule={onDeleteRule}
                   />
                   {idx < group.subPhases.length - 1 && <div className="tl-subdivider" />}
                 </React.Fragment>

@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Modal } from '../layout/Modal';
 import { Button } from '../ui/Button';
 import { reconciliationsService } from '../../services/reconciliations.service';
-import { X, Loader2, CheckCircle2, AlertCircle, RefreshCw, Calendar, ArrowRight } from 'lucide-react';
+import { X, Loader2, CheckCircle2, AlertCircle, RefreshCw, Calendar, ArrowRight, Trash2 } from 'lucide-react';
 import { POLL_INTERVAL_MS } from '../../constants/datahub'; // using same poll interval
 
 interface RunReconciliationModalProps {
@@ -94,23 +94,41 @@ export const RunReconciliationModal: React.FC<RunReconciliationModalProps> = ({
     [onRunComplete]
   );
 
-  const handleStart = async () => {
+  const handleStart = async (isRerun = false) => {
     setPhase({ type: 'STARTING' });
     try {
-      // Period dates are optional on the backend (RunCreate.period_start/
-      // period_end both default to None) - the period-cutoff-guard and
-      // Short-Pay/GL-check tolerances just don't get a period boundary to
-      // compare against when omitted. Temporarily not required here so a
-      // run can be started without picking dates first.
-      const run = await reconciliationsService.startRun(
-        definitionId,
-        periodStart || undefined,
-        periodEnd || undefined
-      );
+      const run = isRerun
+        ? await reconciliationsService.rerunRun(
+          definitionId,
+          periodStart || undefined,
+          periodEnd || undefined
+        )
+        : await reconciliationsService.startRun(
+          definitionId,
+          periodStart || undefined,
+          periodEnd || undefined
+        );
       // Run returns 202 QUEUED with run_id
       startPolling(run.id || run.run_id, run);
     } catch (e: any) {
       setPhase({ type: 'FAILED', run: {}, error: e.message || 'Failed to start run.' });
+    }
+  };
+
+  // DEV-ONLY: wipes this definition's whole reconciliation history first.
+  // Remove this handler + its button below (and the service/route it calls)
+  // when the backend's matching DEV-ONLY endpoint goes away.
+  const handleDevRerun = async () => {
+    setPhase({ type: 'STARTING' });
+    try {
+      const run = await reconciliationsService.devRerun(
+        definitionId,
+        periodStart || undefined,
+        periodEnd || undefined
+      );
+      startPolling(run.id || run.run_id, run);
+    } catch (e: any) {
+      setPhase({ type: 'FAILED', run: {}, error: e.message || 'Failed to reset and rerun.' });
     }
   };
 
@@ -158,7 +176,7 @@ export const RunReconciliationModal: React.FC<RunReconciliationModalProps> = ({
       return (
         <div className="flex flex-col gap-4 my-2">
           <p className="text-xs text-slate-500 leading-relaxed">
-            Optionally select a date window for this reconciliation run — leave blank to run against every open invoice regardless of period.
+            Optionally select a date window for this reconciliation run — leave blank to run against every bank statement regardless of period.
           </p>
 
           {/* Period Date Range */}
@@ -196,10 +214,21 @@ export const RunReconciliationModal: React.FC<RunReconciliationModalProps> = ({
             </div>
           </div>
 
-          <div className="flex justify-end mt-4">
+          <div className="flex items-center justify-between mt-4">
+            {/* DEV-ONLY - remove this button (and handleDevRerun above) once
+                the backend's matching DEV-ONLY endpoint is removed. */}
+            <Button
+              variant="ghost"
+              icon={Trash2}
+              onClick={handleDevRerun}
+              className="!text-rose-600 hover:!bg-rose-50 border border-rose-200"
+              title="Dev only: wipes every run/match/exception/GL posting this definition has, resets invoices and bank statements, then starts fresh"
+            >
+              Reset &amp; Rerun (dev)
+            </Button>
             <Button
               variant="primary"
-              onClick={handleStart}
+              onClick={() => handleStart(false)}
             >
               Start Run
             </Button>

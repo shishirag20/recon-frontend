@@ -146,18 +146,6 @@ export const MOCK_BANK_STATEMENTS: BankStatement[] = [
 ];
 
 export const MOCK_AR_RULES: ARRule[] = [
-  // Phase 0 — Intake Validation Rules (Pre-Checks)
-  {
-    id: 'rule-intake-1',
-    phase: 'intake',
-    kind: 'dup-utr',
-    name: 'Duplicate transaction reference check',
-    enabled: true,
-    priority: 1,
-    confidence: 100,
-    cond: { ref: 'off', amount: { mode: 'exact', value: 0 }, date: { days: 0 } },
-  },
-
   // Phase 1A — Customer Identification (customer-lock)
   {
     id: 'rule-cust-1',
