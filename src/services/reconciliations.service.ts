@@ -97,6 +97,14 @@ export const reconciliationsService = {
     });
   },
 
+  async devRerun(id: string, periodStart?: string, periodEnd?: string): Promise<any> {
+    const validId = await resolveARDefinitionId(id);
+    return api.post(API_ROUTES.RECONCILIATIONS.RUN_DEV_RERUN(validId), {
+      period_start: periodStart || null,
+      period_end: periodEnd || null,
+    });
+  },
+
   async getRunStatus(runId: string): Promise<any> {
     return api.get(API_ROUTES.RECONCILIATIONS.RUN_STATUS(runId));
   },

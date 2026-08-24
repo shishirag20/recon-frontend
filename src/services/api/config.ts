@@ -30,6 +30,7 @@ export const API_ROUTES = {
     // on the real backend - /reconciliations/{id}/runs, plural.
     RUNS: (id: string) => `/reconciliations/${id}/runs`,
     RUN_RERUN: (id: string) => `/reconciliations/${id}/rerun`,
+    RUN_DEV_RERUN: (id: string) => `/reconciliations/${id}/dev-rerun`,
     RUN_STATUS: (runId: string) => `/runs/${runId}`,
     RUN_RETRY: (runId: string) => `/runs/${runId}/retry`,
     RUN_MATCHES: (runId: string) => `/runs/${runId}/matches`,

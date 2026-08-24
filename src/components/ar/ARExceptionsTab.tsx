@@ -522,7 +522,7 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ run, exception
                       className={`cursor-pointer transition-colors ${isSelected ? 'bg-indigo-50/60 font-medium' : 'hover:bg-slate-50/80'
                         }`}
                     >
-                      <td className="px-4 py-4 align-middle"><ExceptionTypeBadge type={e.exception_type} /></td>
+                      <td className="px-4 py-4 align-middle whitespace-nowrap"><ExceptionTypeBadge type={e.exception_type} /></td>
                       <td className="px-4 py-4 align-middle font-medium text-xs text-slate-800" title={e.customer_id ?? undefined}>
                         {e.customer_name ? (
                           <span className="font-semibold text-slate-900">{e.customer_name}</span>
