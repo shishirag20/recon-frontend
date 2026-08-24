@@ -21,6 +21,7 @@ interface ARSubPhaseSectionProps {
   onMoveRuleDown: (id: string) => void;
   onUpdateRule: (r: ARRule) => void;
   onAddRule: (phaseKey: string) => void;
+  onDeleteRule: (id: string) => void;
 }
 
 export const ARSubPhaseSection: React.FC<ARSubPhaseSectionProps> = ({
@@ -39,6 +40,7 @@ export const ARSubPhaseSection: React.FC<ARSubPhaseSectionProps> = ({
   onMoveRuleDown,
   onUpdateRule,
   onAddRule,
+  onDeleteRule,
 }) => {
   const selectedRule = rules.find((r) => r.id === selectedRuleId);
 
@@ -108,6 +110,7 @@ export const ARSubPhaseSection: React.FC<ARSubPhaseSectionProps> = ({
               matchedCount={selectedRule.enabled ? 1 : 0}
               onClose={() => onSelectRule(null)}
               onUpdateRule={onUpdateRule}
+              onDeleteRule={() => onDeleteRule(selectedRule.id)}
             />
           </div>
         )}

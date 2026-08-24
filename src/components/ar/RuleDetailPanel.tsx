@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import type { ARRule } from '../../types';
+import { arService } from '../../services/ar.service';
 import { PipelineBlock, type PipelineBlockData } from './PipelineBlock';
 
 import {
@@ -8,14 +9,15 @@ import {
   getCachedFieldsForEntity,
   resolveDatasetsForRule,
 } from '../../utils/dataSources';
-import { X, Pencil, Save, Target, Table, Sparkles, Check, ArrowLeftRight, AlertTriangle, ChevronDown, FileText, SlidersHorizontal } from 'lucide-react';
-
-interface RuleDetailPanelProps {
+  import { X, Pencil, Save, Target, Table, Sparkles, Check, ArrowLeftRight, AlertTriangle, ChevronDown, FileText, SlidersHorizontal, Trash2 } from 'lucide-react';
+  
+  interface RuleDetailPanelProps {
   rule: ARRule;
   ruleLabel: string;
   matchedCount?: number;
   onClose: () => void;
   onUpdateRule: (updated: ARRule) => void;
+  onDeleteRule?: () => void;
 }
 
 export interface RuleThresholdParam {
@@ -143,6 +145,7 @@ export const RuleDetailPanel: React.FC<RuleDetailPanelProps> = ({
   matchedCount: _matchedCount = 0,
   onClose,
   onUpdateRule,
+  onDeleteRule,
 }) => {
   const [activeTab, setActiveTabState] = useState<'pipeline' | 'outcome' | 'sandbox'>(() => {
     const saved = localStorage.getItem('ar_rule_detail_tab') as 'pipeline' | 'outcome' | 'sandbox';
@@ -157,8 +160,26 @@ export const RuleDetailPanel: React.FC<RuleDetailPanelProps> = ({
     localStorage.setItem('ar_rule_detail_tab', tab);
   };
 
-  const [isEditMode, setIsEditMode] = useState(false);
+  const isNewRule = rule.id.startsWith('NEW_RULE_');
+  const [isEditMode, setIsEditMode] = useState(isNewRule);
   const [draftRule, setDraftRule] = useState<ARRule>(rule);
+
+  const [availableKinds, setAvailableKinds] = useState<{ id: string; name: string; type: string }[]>([]);
+
+  useEffect(() => {
+    if (isNewRule) {
+      setIsEditMode(true);
+      Promise.all([arService.getAlgorithms(), arService.getMatchers()])
+        .then(([algoRes, matchRes]) => {
+          const algos = (algoRes.algorithms || []).map((a: any) => ({ id: a.id, name: a.name, type: a.category }));
+          const matchers = (matchRes.matchers || []).map((m: any) => ({ id: m.id, name: m.name, type: m.category }));
+          setAvailableKinds([...algos, ...matchers]);
+        })
+        .catch(console.error);
+    } else {
+      setIsEditMode(false);
+    }
+  }, [rule.id, isNewRule]);
 
   const defaults = resolveDatasetsForRule(rule);
 
@@ -400,7 +421,34 @@ export const RuleDetailPanel: React.FC<RuleDetailPanelProps> = ({
             <span className="font-mono text-xs font-bold text-indigo-700 uppercase tracking-wide bg-indigo-50 px-2.5 py-0.5 rounded border border-indigo-200">
               {ruleLabel}
             </span>
-            <h4 className="font-bold text-sm text-slate-900">{draftRule.name}</h4>
+            {isEditMode ? (
+              <input
+                type="text"
+                value={draftRule.name}
+                onChange={(e) => setDraftRule({ ...draftRule, name: e.target.value })}
+                className="font-bold text-sm text-slate-900 bg-white border border-slate-300 rounded px-2 py-1 outline-none focus:border-indigo-500 w-64 shadow-inner transition-all"
+                placeholder="Rule Name"
+                autoFocus={isNewRule}
+              />
+            ) : (
+              <h4 className="font-bold text-sm text-slate-900">{draftRule.name}</h4>
+            )}
+            {isNewRule && (
+              <div className="flex items-center gap-1.5 ml-2">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Type:</span>
+                <select
+                  value={draftRule.kind}
+                  onChange={(e) => setDraftRule({ ...draftRule, kind: e.target.value })}
+                  className="bg-white border border-slate-300 rounded px-2 py-1 text-xs font-semibold text-slate-700 outline-none focus:border-indigo-500 shadow-inner"
+                >
+                  <option value="field-match">Field Match (Default)</option>
+                  <option value="threshold">Threshold (Default)</option>
+                  {availableKinds.map(k => (
+                    <option key={k.id} value={k.id}>{k.name} ({k.type})</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
           <p className="text-sm text-slate-500 max-w-2xl mt-1.5 leading-relaxed">
             {description}
@@ -474,6 +522,21 @@ export const RuleDetailPanel: React.FC<RuleDetailPanelProps> = ({
               </>
             )}
           </button>
+
+          {/* Delete Rule Button */}
+          {onDeleteRule && !isNewRule && (
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm('Are you sure you want to delete this rule? This action cannot be undone.')) {
+                  onDeleteRule();
+                }
+              }}
+              className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-red-200 text-red-600 bg-red-50 hover:bg-red-100 hover:border-red-300 transition-all flex items-center gap-1.5"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Delete
+            </button>
+          )}
 
           {/* Close Panel Button */}
           <button

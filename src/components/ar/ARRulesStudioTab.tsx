@@ -107,6 +107,9 @@ export const ARRulesStudioTab: React.FC = () => {
   };
 
   const handleSelectRule = (id: string | null) => {
+    if (selectedRuleId?.startsWith('NEW_RULE_') && id !== selectedRuleId) {
+      setRules((prev) => prev.filter((r) => r.id !== selectedRuleId));
+    }
     setSelectedRuleId(id);
   };
 
@@ -166,13 +169,33 @@ export const ARRulesStudioTab: React.FC = () => {
   };
 
   const handleUpdateRule = async (updated: ARRule) => {
-    setRules((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
-    if (definitionId) {
-      try {
-        await arService.updateARRule(definitionId, updated);
-        toast('Rule saved successfully', 'ok');
-      } catch {
-        toast('Failed to save rule on server', 'bad');
+    if (updated.id.startsWith('NEW_RULE_')) {
+      if (definitionId) {
+        try {
+          const created = await arService.createARRule(definitionId, {
+            phase: updated.phase as string,
+            kind: updated.kind,
+            name: updated.name || 'New Custom Rule',
+            priority: updated.priority || 10,
+            confidence: updated.confidence,
+            config: updated.config || {}
+          });
+          setRules(prev => prev.map(r => r.id === updated.id ? created : r));
+          setSelectedRuleId(created.id);
+          toast('Rule created successfully', 'ok');
+        } catch (err: any) {
+          toast(err.response?.data?.detail || 'Failed to create rule', 'bad');
+        }
+      }
+    } else {
+      setRules((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+      if (definitionId) {
+        try {
+          await arService.updateARRule(definitionId, updated);
+          toast('Rule saved successfully', 'ok');
+        } catch {
+          toast('Failed to save rule on server', 'bad');
+        }
       }
     }
   };
@@ -180,9 +203,9 @@ export const ARRulesStudioTab: React.FC = () => {
   const handleAddRule = (phaseKey: string) => {
     const rulesInPhase = rules.filter((r) => r.phase === phaseKey);
     const newRule: ARRule = {
-      id: `rule-${phaseKey}-${Date.now()}`,
+      id: `NEW_RULE_${phaseKey}_${Date.now()}`,
       phase: phaseKey,
-      kind: 'threshold',
+      kind: phaseKey === 'intake' || phaseKey === 'customer-lock' || phaseKey === 'candidate-pool' || phaseKey === 'allocation' ? 'field-match' : 'threshold',
       name: `New Custom Rule ${rulesInPhase.length + 1}`,
       enabled: true,
       priority: (rulesInPhase[rulesInPhase.length - 1]?.priority ?? 0) + 10,
@@ -192,6 +215,20 @@ export const ARRulesStudioTab: React.FC = () => {
 
     setRules((prev) => [...prev, newRule]);
     setSelectedRuleId(newRule.id);
+  };
+
+  const handleDeleteRule = async (ruleId: string) => {
+    if (!definitionId) return;
+    try {
+      await arService.deleteARRule(definitionId, ruleId);
+      setRules(prev => prev.filter(r => r.id !== ruleId));
+      if (selectedRuleId === ruleId) {
+        setSelectedRuleId(null);
+      }
+      toast('Rule deleted successfully', 'ok');
+    } catch {
+      toast('Failed to delete rule', 'bad');
+    }
   };
 
   return (
@@ -237,6 +274,7 @@ export const ARRulesStudioTab: React.FC = () => {
               onMoveRuleDown={handleMoveRuleDown}
               onUpdateRule={handleUpdateRule}
               onAddRule={handleAddRule}
+              onDeleteRule={handleDeleteRule}
             />
           ))}
         </div>

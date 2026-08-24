@@ -121,6 +121,33 @@ export const arService = {
   },
 
   /**
+   * Create a new AR matching rule
+   */
+  async createARRule(
+    id: string,
+    payload: { phase: string; kind: string; name: string; priority: number; confidence?: number; config: any }
+  ): Promise<ARRule> {
+    const validId = await resolveARDefinitionId(id);
+    const reversePhaseMap: Record<string, string> = {
+      'customer-lock': 'CUSTOMER_LOCK',
+      'candidate-pool': 'CANDIDATE_POOL',
+      'narration-cross-check': 'NARRATION_CROSS_CHECK',
+      'allocation': 'ALLOCATION',
+      'intake': 'INTAKE_VALIDATION',
+      'short-pay': 'SHORT_PAY',
+      'unapplied': 'UNAPPLIED',
+      'gl-check': 'GL_CHECK',
+    };
+    const backendPhase = reversePhaseMap[payload.phase] || payload.phase.toUpperCase().replace(/-/g, '_');
+    
+    const res = await api.post<any>(`/reconciliations/${validId}/rules`, {
+      ...payload,
+      phase: backendPhase
+    });
+    return normalizeRule(res);
+  },
+
+  /**
    * Update or toggle an AR matching rule
    */
   async updateARRule(id: string, rule: ARRule): Promise<ARRule> {
@@ -132,6 +159,28 @@ export const arService = {
       config: rule.config || rule.cond,
     });
     return normalizeRule(res);
+  },
+
+  /**
+   * Delete an AR matching rule
+   */
+  async deleteARRule(definitionId: string, ruleId: string): Promise<void> {
+    const validId = await resolveARDefinitionId(definitionId);
+    await api.delete(`/reconciliations/${validId}/rules/${ruleId}`);
+  },
+
+  /**
+   * Fetch matchers catalog
+   */
+  async getMatchers(): Promise<any> {
+    return api.get<any>('/reconciliations/matchers');
+  },
+
+  /**
+   * Fetch algorithms catalog
+   */
+  async getAlgorithms(): Promise<any> {
+    return api.get<any>('/reconciliations/algorithms');
   },
 
   /**

@@ -708,6 +708,27 @@ export const PipelineBlock: React.FC<PipelineBlockProps> = ({
                       )}
                     </span>
                   ))}
+                  {isEditMode && (
+                    <div className="relative inline-flex items-center ml-1">
+                      <select
+                        value=""
+                        onChange={(e) => {
+                          if (e.target.value) {
+                             handleChange('fetchedOutputs', [...fetchedOutputs, e.target.value]);
+                          }
+                        }}
+                        className="appearance-none bg-emerald-100/50 text-emerald-800 border border-emerald-300 rounded px-2 py-0.5 text-[10px] font-semibold cursor-pointer outline-none hover:border-emerald-400 pr-5"
+                      >
+                        <option value="" disabled>+ Add field</option>
+                        {Array.from(new Set(getCachedFieldsForEntity(targetEntity)))
+                          .filter(f => !f.startsWith('$') && !fetchedOutputs.includes(f))
+                          .map(f => (
+                            <option key={f} value={f}>{f}</option>
+                          ))}
+                      </select>
+                      <ChevronDown className="w-3 h-3 text-emerald-600 absolute right-1 pointer-events-none" />
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
