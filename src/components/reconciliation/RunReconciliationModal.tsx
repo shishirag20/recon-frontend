@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Modal } from '../layout/Modal';
 import { Button } from '../ui/Button';
 import { reconciliationsService } from '../../services/reconciliations.service';
-import { X, Loader2, CheckCircle2, AlertCircle, RefreshCw, Calendar, ArrowRight } from 'lucide-react';
+import { X, Loader2, CheckCircle2, AlertCircle, RefreshCw, Calendar, ArrowRight, Trash2 } from 'lucide-react';
 import { POLL_INTERVAL_MS } from '../../constants/datahub'; // using same poll interval
 
 interface RunReconciliationModalProps {
@@ -99,19 +99,36 @@ export const RunReconciliationModal: React.FC<RunReconciliationModalProps> = ({
     try {
       const run = isRerun
         ? await reconciliationsService.rerunRun(
-            definitionId,
-            periodStart || undefined,
-            periodEnd || undefined
-          )
+          definitionId,
+          periodStart || undefined,
+          periodEnd || undefined
+        )
         : await reconciliationsService.startRun(
-            definitionId,
-            periodStart || undefined,
-            periodEnd || undefined
-          );
+          definitionId,
+          periodStart || undefined,
+          periodEnd || undefined
+        );
       // Run returns 202 QUEUED with run_id
       startPolling(run.id || run.run_id, run);
     } catch (e: any) {
       setPhase({ type: 'FAILED', run: {}, error: e.message || 'Failed to start run.' });
+    }
+  };
+
+  // DEV-ONLY: wipes this definition's whole reconciliation history first.
+  // Remove this handler + its button below (and the service/route it calls)
+  // when the backend's matching DEV-ONLY endpoint goes away.
+  const handleDevRerun = async () => {
+    setPhase({ type: 'STARTING' });
+    try {
+      const run = await reconciliationsService.devRerun(
+        definitionId,
+        periodStart || undefined,
+        periodEnd || undefined
+      );
+      startPolling(run.id || run.run_id, run);
+    } catch (e: any) {
+      setPhase({ type: 'FAILED', run: {}, error: e.message || 'Failed to reset and rerun.' });
     }
   };
 
@@ -197,13 +214,17 @@ export const RunReconciliationModal: React.FC<RunReconciliationModalProps> = ({
             </div>
           </div>
 
-          <div className="flex justify-between items-center mt-4 pt-2 border-t border-slate-100">
+          <div className="flex items-center justify-between mt-4">
+            {/* DEV-ONLY - remove this button (and handleDevRerun above) once
+                the backend's matching DEV-ONLY endpoint is removed. */}
             <Button
-              variant="secondary"
-              onClick={() => handleStart(true)}
-              title="Reset previous run results & re-evaluate rule matches against existing data without deleting files"
+              variant="ghost"
+              icon={Trash2}
+              onClick={handleDevRerun}
+              className="!text-rose-600 hover:!bg-rose-50 border border-rose-200"
+              title="Dev only: wipes every run/match/exception/GL posting this definition has, resets invoices and bank statements, then starts fresh"
             >
-              Reset & Rerun Present Data
+              Reset &amp; Rerun (dev)
             </Button>
             <Button
               variant="primary"

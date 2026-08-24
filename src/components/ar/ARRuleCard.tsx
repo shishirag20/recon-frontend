@@ -57,7 +57,7 @@ export const ARRuleCard: React.FC<ARRuleCardProps> = ({
     }
     let val = Number(rawVal);
     if (firstParam.unit === 'minor_rupees' && !isNaN(val)) val = val / 100;
-    
+
     if (!isNaN(val)) {
       const displayVal = firstParam.displayFormat ? firstParam.displayFormat.replace('{value}', val) : String(val);
       paramBadge = (
@@ -103,8 +103,8 @@ export const ARRuleCard: React.FC<ARRuleCardProps> = ({
       {/* Priority Badge Box (e.g. 3.1) */}
       <span
         className={`font-mono text-xs font-bold px-2 py-1 rounded-md flex-none border ${isSelected
-            ? 'bg-indigo-600 text-white border-indigo-600'
-            : 'bg-slate-100 text-slate-700 border-slate-200'
+          ? 'bg-indigo-600 text-white border-indigo-600'
+          : 'bg-slate-100 text-slate-700 border-slate-200'
           }`}
       >
         {ruleNumberStr}

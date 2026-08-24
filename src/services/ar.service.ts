@@ -139,7 +139,7 @@ export const arService = {
       'gl-check': 'GL_CHECK',
     };
     const backendPhase = reversePhaseMap[payload.phase] || payload.phase.toUpperCase().replace(/-/g, '_');
-    
+
     const res = await api.post<any>(`/reconciliations/${validId}/rules`, {
       ...payload,
       phase: backendPhase
@@ -156,6 +156,7 @@ export const arService = {
     const res = await api.patch<any>(`/reconciliations/${validId}/rules/${ruleId}`, {
       enabled: rule.enabled,
       confidence: rule.confidence,
+      name: rule.name,
       config: rule.config || rule.cond,
     });
     return normalizeRule(res);

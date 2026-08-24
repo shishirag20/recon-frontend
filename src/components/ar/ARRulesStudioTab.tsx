@@ -24,10 +24,19 @@ const PHASE_GROUPS: PhaseGroupMeta[] = [
         branchNote: 'only runs for rows Customer Identification couldn\'t lock',
         hint: 'Only runs if Customer Identification fails outright — narrows to a short list instead of guessing',
       },
+    ],
+  },
+  {
+    key: 'group-narration-check',
+    priority: 3,
+    label: 'Invoice Narration Cross-Check Rules (Phase 1c)',
+    description: 'Independently verifies the customer identified above against whatever invoice the transaction narration itself references — a separate check, not a competing identification signal, so it runs after Customer Identification and Candidate Pool have already had their turn for every row.',
+    example: 'Narration references INV-2026-102 (Bright Textiles), but the payment was locked to Nimbus Traders via UPI — flagged instead of silently trusting the lock.',
+    subPhases: [
       {
-        key: 'narration-cross-check',
-        label: 'Invoice Narration Cross-Check Rules (Phase 1c)',
-        hint: 'Independently verifies the customer identified above against whatever invoice the transaction narration itself references — a separate check, not a competing identification signal, so it runs after Customer Identification and Candidate Pool have already had their turn for every row.',
+        key: 'narration-check',
+        label: 'Invoice Narration Cross-Check',
+        hint: 'Independently checks whether the narration references a real invoice belonging to a different customer than the one identified above — disagreement is flagged for review, never silently overridden.',
       },
     ],
   },
@@ -77,6 +86,7 @@ export const ARRulesStudioTab: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     'group-customer': true,
+    'group-narration-check': true,
     'group-allocation': true,
     'group-post': false,
   });

@@ -145,8 +145,23 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ run, exception
   }, []);
 
   const shortIdRule = (id: string) => `${id.slice(0, 8)}…`;
-  const ruleLabel = (ruleId: string | null): string => {
-    if (!ruleId) return 'No rule (fallback)';
+  // `rule_id` is null for two genuinely different reasons - a human manually
+  // matched it (match_type 'MANUAL'), or a legacy no-customer direct-match
+  // committed before the "Direct Invoice Match" catalog row (kind
+  // direct-invoice-match) existed to attach a real rule_id to it. Even for
+  // that legacy case, look up the catalog row's *current* name by kind
+  // rather than hardcoding the string, so a rename in Rules Studio shows up
+  // here too.
+  const rulesByKind = useMemo(() => {
+    const byKind: Record<string, ARRule> = {};
+    Object.values(rulesById).forEach((r) => { byKind[r.kind] = r; });
+    return byKind;
+  }, [rulesById]);
+  const ruleLabel = (ruleId: string | null, matchType?: string): string => {
+    if (!ruleId) {
+      if (matchType === 'MANUAL') return 'Manual Match';
+      return rulesByKind['direct-invoice-match']?.name || 'Direct Invoice Match';
+    }
     const rule = rulesById[ruleId];
     if (!rule) return shortIdRule(ruleId);
     return rule.name || rule.kind;
@@ -485,65 +500,65 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ run, exception
         ) : filteredExceptions.length === 0 ? (
           <div className="p-10 text-center text-xs text-slate-500">No exceptions match the current filter.</div>
         ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50 text-[10.5px] font-bold text-slate-400 uppercase tracking-wider">
-                <th className="px-4 py-3">Type</th>
-                <th className="px-4 py-3">Customer</th>
-                <th className="px-4 py-3">Description</th>
-                <th className="px-4 py-3">Created</th>
-                <th className="px-4 py-3 text-right">Amount</th>
-                <th className="px-4 py-3 text-right">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredExceptions.map((e) => {
-                const isSelected = activeExceptionId === e.exception_id;
-                return (
-                  <tr
-                    key={e.exception_id}
-                    onClick={() => openException(e.exception_id)}
-                    className={`cursor-pointer transition-colors ${isSelected ? 'bg-indigo-50/60 font-medium' : 'hover:bg-slate-50/80'
-                      }`}
-                  >
-                    <td className="px-4 py-4 align-middle"><ExceptionTypeBadge type={e.exception_type} /></td>
-                    <td className="px-4 py-4 align-middle font-medium text-xs text-slate-800" title={e.customer_id ?? undefined}>
-                      {e.customer_name ? (
-                        <span className="font-semibold text-slate-900">{e.customer_name}</span>
-                      ) : e.customer_code ? (
-                        <span className="font-semibold text-slate-900">{e.customer_code}</span>
-                      ) : e.customer_id ? (
-                        <span className="font-mono text-[11.5px] text-slate-600">{shortId(e.customer_id)}</span>
-                      ) : (
-                        <span className="text-slate-400">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-4 align-middle text-slate-600 font-normal leading-snug">
-                      {e.reason_code || '—'}
-                    </td>
-                    <td className="px-4 py-4 align-middle text-slate-500 font-mono text-[11.5px]">
-                      {new Date(e.created_at).toLocaleDateString('en-IN')}
-                    </td>
-                    <td className="px-4 py-4 align-middle text-right font-mono font-bold text-rose-700">
-                      {rupees(exceptionAmountMinor(e))}
-                    </td>
-                    <td className="px-4 py-4 align-middle text-right">
-                      <span
-                        className={`px-2.5 py-1 rounded-full text-[11px] font-semibold ${isResolvedStatus(e.status)
-                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                          : 'bg-rose-50 text-rose-700 border border-rose-200'
-                          }`}
-                      >
-                        {STATUS_LABELS[e.status] || e.status}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50 text-[10.5px] font-bold text-slate-400 uppercase tracking-wider">
+                  <th className="px-4 py-3">Type</th>
+                  <th className="px-4 py-3">Customer</th>
+                  <th className="px-4 py-3">Description</th>
+                  <th className="px-4 py-3">Created</th>
+                  <th className="px-4 py-3 text-right">Amount</th>
+                  <th className="px-4 py-3 text-right">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredExceptions.map((e) => {
+                  const isSelected = activeExceptionId === e.exception_id;
+                  return (
+                    <tr
+                      key={e.exception_id}
+                      onClick={() => openException(e.exception_id)}
+                      className={`cursor-pointer transition-colors ${isSelected ? 'bg-indigo-50/60 font-medium' : 'hover:bg-slate-50/80'
+                        }`}
+                    >
+                      <td className="px-4 py-4 align-middle"><ExceptionTypeBadge type={e.exception_type} /></td>
+                      <td className="px-4 py-4 align-middle font-medium text-xs text-slate-800" title={e.customer_id ?? undefined}>
+                        {e.customer_name ? (
+                          <span className="font-semibold text-slate-900">{e.customer_name}</span>
+                        ) : e.customer_code ? (
+                          <span className="font-semibold text-slate-900">{e.customer_code}</span>
+                        ) : e.customer_id ? (
+                          <span className="font-mono text-[11.5px] text-slate-600">{shortId(e.customer_id)}</span>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-4 align-middle text-slate-600 font-normal leading-snug">
+                        {e.reason_code || '—'}
+                      </td>
+                      <td className="px-4 py-4 align-middle text-slate-500 font-mono text-[11.5px]">
+                        {new Date(e.created_at).toLocaleDateString('en-IN')}
+                      </td>
+                      <td className="px-4 py-4 align-middle text-right font-mono font-bold text-rose-700">
+                        {rupees(exceptionAmountMinor(e))}
+                      </td>
+                      <td className="px-4 py-4 align-middle text-right">
+                        <span
+                          className={`px-2.5 py-1 rounded-full text-[11px] font-semibold ${isResolvedStatus(e.status)
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : 'bg-rose-50 text-rose-700 border border-rose-200'
+                            }`}
+                        >
+                          {STATUS_LABELS[e.status] || e.status}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
@@ -594,7 +609,10 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ run, exception
                 )}
                 <div className="text-[12.5px] text-slate-800">
                   <span className="font-semibold text-slate-900">
-                    {ruleLabel(matchesByGroupId[activeException.match_group_id].rule_id)}
+                    {ruleLabel(
+                      matchesByGroupId[activeException.match_group_id].rule_id,
+                      matchesByGroupId[activeException.match_group_id].match_type
+                    )}
                   </span>
                   {matchesByGroupId[activeException.match_group_id].reason && (
                     <div className="text-[11.5px] text-slate-500 font-normal mt-0.5">
@@ -1103,32 +1121,32 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ run, exception
             {/* Panel: every other exception type - raw detail JSON, generic resolve */}
             {activeException.exception_type !== 'SHORT_PAY' && activeException.exception_type !== 'NO_PAYMENT' && activeException.exception_type !== 'SUSPENSE'
               && activeException.exception_type !== 'GL_VARIANCE' && activeException.exception_type !== 'DOUBLE_COLLISION' && activeException.exception_type !== 'MULTIPLE_INVOICE_MATCH' && (
-              <div className="space-y-4">
-                <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700">
-                  <div className="font-semibold text-slate-900 mb-1">Reason</div>
-                  <div>{activeException.reason_code || '—'}</div>
-                </div>
-                {activeException.detail && (
-                  <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg">
-                    <div className="text-[10.5px] font-bold text-slate-400 uppercase mb-1.5">Detail</div>
-                    <pre className="text-[11px] font-mono text-slate-700 whitespace-pre-wrap break-all">
-                      {JSON.stringify(activeException.detail, null, 2)}
-                    </pre>
+                <div className="space-y-4">
+                  <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700">
+                    <div className="font-semibold text-slate-900 mb-1">Reason</div>
+                    <div>{activeException.reason_code || '—'}</div>
                   </div>
-                )}
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                    Resolution Note
-                  </label>
-                  <textarea
-                    value={resolutionNote}
-                    onChange={(e) => setResolutionNote(e.target.value)}
-                    placeholder="Enter audit note..."
-                    className="w-full bg-white border border-slate-200 rounded-lg p-3 text-xs font-medium text-slate-900 h-16 resize-none focus:outline-none focus:border-indigo-600"
-                  />
+                  {activeException.detail && (
+                    <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg">
+                      <div className="text-[10.5px] font-bold text-slate-400 uppercase mb-1.5">Detail</div>
+                      <pre className="text-[11px] font-mono text-slate-700 whitespace-pre-wrap break-all">
+                        {JSON.stringify(activeException.detail, null, 2)}
+                      </pre>
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                      Resolution Note
+                    </label>
+                    <textarea
+                      value={resolutionNote}
+                      onChange={(e) => setResolutionNote(e.target.value)}
+                      placeholder="Enter audit note..."
+                      className="w-full bg-white border border-slate-200 rounded-lg p-3 text-xs font-medium text-slate-900 h-16 resize-none focus:outline-none focus:border-indigo-600"
+                    />
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
             {/* Action Buttons */}
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
