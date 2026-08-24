@@ -320,6 +320,8 @@ export interface AllocationOut {
   bank_txn_id: string | null;
   /** Real bank reference/UTR from the source file - bank_txn_id is the internal generated row UUID. */
   bank_reference: string | null;
+  /** The source file's own transaction id column (e.g. 'BANK-017'), if it had one - null otherwise. */
+  bank_txn_source_id: string | null;
   /** How much of this payment was actually applied to this invoice. */
   allocated_minor: number;
 }

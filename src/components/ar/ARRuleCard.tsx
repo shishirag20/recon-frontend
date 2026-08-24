@@ -357,9 +357,19 @@ export const ARRuleCard: React.FC<ARRuleCardProps> = ({
     }
   }, [rule, isEditing]);
 
-  const meta: RuleMeta = RULE_METADATA[rule.kind] || {
-    label: rule.name,
-    description: rule.config?.description || 'Applies automated matching rule logic against incoming transaction stream.',
+  // rule.name/rule.config.description are the real, editable, backend-
+  // persisted fields (Rules Studio's own "RULE NAME" input saves here) -
+  // they must always win over RULE_METADATA, which is a static reference
+  // catalog predating per-definition editing and was never meant to be
+  // authoritative once a real rule row exists. Getting this backwards (as
+  // it was before) made every rename to a known `kind` silently invisible -
+  // it saved fine, the display just never read it (2026-08 fix).
+  const meta: RuleMeta = {
+    label: rule.name || RULE_METADATA[rule.kind]?.label || rule.kind,
+    description:
+      rule.config?.description ||
+      RULE_METADATA[rule.kind]?.description ||
+      'Applies automated matching rule logic against incoming transaction stream.',
   };
 
   const { bankField, secondField } = getRuleDisplayFields(rule);

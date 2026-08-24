@@ -128,6 +128,7 @@ export const arService = {
     const ruleId = rule.id || (rule as any).rule_id;
     const res = await api.patch<any>(`/reconciliations/${validId}/rules/${ruleId}`, {
       enabled: rule.enabled,
+      name: rule.name,
       config: rule.config || rule.cond,
     });
     return normalizeRule(res);

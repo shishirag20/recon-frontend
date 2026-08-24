@@ -56,17 +56,29 @@ export const ARMatchedTab: React.FC<ARMatchedTabProps> = ({ run, matches, except
   }, []);
 
   // `rule_id` is null for two genuinely different reasons - a human manually
-  // matched it (match_type 'MANUAL'), or the no-customer direct-match path
-  // (engine.py's _commit_direct_match) closed it via a document/invoice
-  // number found directly in narration, with no customer ever identified to
-  // dispatch through a catalog rule at all. Neither is "no rule" - showing
-  // that was actively misleading given `reason` right below it always spells
-  // out exactly what matched.
+  // matched it (match_type 'MANUAL'), or a legacy no-customer direct-match
+  // committed before the "Direct Invoice Match" catalog row (kind
+  // direct-invoice-match) existed to attach a real rule_id to it. New
+  // matches always carry that real rule_id now (2026-08 fix), so this only
+  // covers old data - but even then, look up that catalog row's *current*
+  // name by kind rather than hardcoding the string, so a rename in Rules
+  // Studio is reflected here too, not just for matches with a real rule_id.
+  const rulesByKind = useMemo(() => {
+    const byKind: Record<string, ARRule> = {};
+    Object.values(rulesById).forEach((r) => { byKind[r.kind] = r; });
+    return byKind;
+  }, [rulesById]);
   const ruleLabel = (ruleId: string | null, matchType?: string): string => {
-    if (!ruleId) return matchType === 'MANUAL' ? 'Manual Match' : 'Direct Invoice Match';
+    if (!ruleId) {
+      if (matchType === 'MANUAL') return 'Manual Match';
+      return rulesByKind['direct-invoice-match']?.name || 'Direct Invoice Match';
+    }
     const rule = rulesById[ruleId];
     if (!rule) return shortId(ruleId);
-    return RULE_METADATA[rule.kind]?.label || rule.name || rule.kind;
+    // rule.name is the real, editable, backend-persisted field - must win
+    // over RULE_METADATA's static reference label, or a rename in Rules
+    // Studio never shows up here (2026-08 fix, same as ARRuleCard.tsx).
+    return rule.name || RULE_METADATA[rule.kind]?.label || rule.kind;
   };
 
   const gatewaySettlements: GatewaySettlement[] = arResult?.gatewaySettlements || [];
@@ -242,6 +254,7 @@ export const ARMatchedTab: React.FC<ARMatchedTabProps> = ({ run, matches, except
                   const isChecked = selectedMatches.includes(group.match_group_id);
                   const bankTxnId = group.allocations[0]?.bank_txn_id ?? null;
                   const bankReference = group.allocations[0]?.bank_reference ?? null;
+                  const bankTxnSourceId = group.allocations[0]?.bank_txn_source_id ?? null;
                   // The payment's own total received - not the sum of what got
                   // allocated, which under/overstates it for short-pay/overpay/fee
                   // cases (every allocation in a group shares one payment, so the
@@ -284,8 +297,8 @@ export const ARMatchedTab: React.FC<ARMatchedTabProps> = ({ run, matches, except
                         {isFirst && (
                           <td rowSpan={group.allocations.length} className="px-4 py-3.5 align-middle border-x border-slate-200">
                             <div className="grid grid-cols-2 gap-3 text-center items-center font-medium text-[13px] text-slate-900">
-                              <div className="font-semibold text-slate-900" title={bankTxnId ?? undefined}>
-                                {bankReference || shortId(bankTxnId)}
+                              <div className="font-semibold text-slate-900" title={bankReference ?? undefined}>
+                                {bankTxnSourceId || bankReference || shortId(bankTxnId)}
                               </div>
                               {/* The payment's own total received, not the sum of what
                                   got allocated across its invoice(s). */}

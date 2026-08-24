@@ -147,15 +147,28 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ run, exception
 
   const shortIdRule = (id: string) => `${id.slice(0, 8)}…`;
   // `rule_id` is null for two genuinely different reasons - a human manually
-  // matched it (match_type 'MANUAL'), or the no-customer direct-match path
-  // (engine.py's _commit_direct_match) closed it via a document/invoice
-  // number found directly in narration, with no customer ever identified to
-  // dispatch through a catalog rule at all. Neither is "no rule".
+  // matched it (match_type 'MANUAL'), or a legacy no-customer direct-match
+  // committed before the "Direct Invoice Match" catalog row (kind
+  // direct-invoice-match) existed to attach a real rule_id to it. Even for
+  // that legacy case, look up the catalog row's *current* name by kind
+  // rather than hardcoding the string, so a rename in Rules Studio shows up
+  // here too.
+  const rulesByKind = useMemo(() => {
+    const byKind: Record<string, ARRule> = {};
+    Object.values(rulesById).forEach((r) => { byKind[r.kind] = r; });
+    return byKind;
+  }, [rulesById]);
   const ruleLabel = (ruleId: string | null, matchType?: string): string => {
-    if (!ruleId) return matchType === 'MANUAL' ? 'Manual Match' : 'Direct Invoice Match';
+    if (!ruleId) {
+      if (matchType === 'MANUAL') return 'Manual Match';
+      return rulesByKind['direct-invoice-match']?.name || 'Direct Invoice Match';
+    }
     const rule = rulesById[ruleId];
     if (!rule) return shortIdRule(ruleId);
-    return RULE_METADATA[rule.kind]?.label || rule.name || rule.kind;
+    // rule.name is the real, editable, backend-persisted field - must win
+    // over RULE_METADATA's static reference label, or a rename in Rules
+    // Studio never shows up here (2026-08 fix, same as ARRuleCard.tsx).
+    return rule.name || RULE_METADATA[rule.kind]?.label || rule.kind;
   };
 
   const matchesByGroupId = useMemo(() => {

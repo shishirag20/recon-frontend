@@ -292,7 +292,20 @@ export const ARRuleEditor: React.FC<ARRuleEditorProps> = ({
               value={secondField}
               onChange={(e) => {
                 const val = e.target.value;
-                const newConfig = { ...(rule.config || {}), match_field: val };
+                // Write to match_fields (plural, array) - what the backend
+                // actually reads (allocation.py's _matched_number,
+                // identification.py's narration_invoice_owner, 2026-08 fix).
+                // The old singular match_field is dropped, not just added
+                // alongside - leaving both set is what caused this dropdown
+                // to look stuck, since getRuleDisplayFields prefers
+                // match_fields whenever it's present and this select never
+                // updated it. This UI is still a single-select, so picking
+                // one field here always narrows to just that one - there's
+                // no control yet for "check both fields" (the backend
+                // supports a multi-element list; this dropdown doesn't
+                // expose choosing more than one).
+                const { match_field, ...rest } = rule.config || {};
+                const newConfig = { ...rest, match_fields: [val] };
                 onUpdateRule({ ...rule, secondField: val, config: newConfig });
               }}
               className="bg-white border border-slate-200 rounded-lg px-3 h-9 font-mono text-[11.5px] text-slate-800 focus:outline-none focus:border-indigo-600 shadow-2xs min-w-40"
