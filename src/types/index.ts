@@ -222,6 +222,32 @@ export interface ARRule {
   config?: Record<string, any>;
 }
 
+/** One selectable comparison method for a `kind="field-match"` rule
+ * (app/reconciliation/rules/matchers.py's MATCHER_CATALOG) - real, wired
+ * matchers, not the generic_functions.py primitives (those aren't
+ * dispatched by any rule yet). */
+export interface MatcherInfo {
+  kind: string;
+  label: string;
+  description: string;
+  config_keys: string[];
+}
+
+/** One selectable `config.source` for a `kind="field-match"` rule, and the
+ * `source_field` values valid against it. */
+export interface SourceInfo {
+  source: string;
+  fields: string[];
+}
+
+/** GET /reconciliations/matchers - the picker data for building a custom
+ * field-match rule (matcher + bank_field + source + source_field). */
+export interface MatcherCatalog {
+  matchers: MatcherInfo[];
+  sources: SourceInfo[];
+  bank_fields: string[];
+}
+
 export interface Customer {
   id?: string;
   customerId?: string;
@@ -358,6 +384,8 @@ export interface ExceptionOut {
   customer_code?: string | null;
   invoice_number?: string | null;
   bank_reference?: string | null;
+  /** The source file's own transaction id column (e.g. 'BANK-001'), if it had one - null otherwise. */
+  bank_txn_source_id?: string | null;
   payer_name?: string | null;
   narration?: string | null;
   discrepancy_minor: number | null;

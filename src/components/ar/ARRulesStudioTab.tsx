@@ -205,21 +205,45 @@ export const ARRulesStudioTab: React.FC = () => {
     }
   };
 
-  const handleAddRule = (phaseKey: string) => {
+  const handleAddRule = async (phaseKey: string) => {
+    if (!definitionId) return;
     const rulesInPhase = rules.filter((r) => r.phase === phaseKey);
-    const newRule: ARRule = {
-      id: `rule-${phaseKey}-${Date.now()}`,
-      phase: phaseKey,
-      kind: 'threshold',
-      name: `New Custom Rule ${rulesInPhase.length + 1}`,
-      enabled: true,
-      priority: (rulesInPhase[rulesInPhase.length - 1]?.priority ?? 0) + 10,
-      confidence: null,
-      config: {},
-    };
-
-    setRules((prev) => [...prev, newRule]);
-    setEditingRuleId(newRule.id);
+    // field-match (rules.matchers.find_matches) is the only kind that's
+    // actually composable without a code change, and only for
+    // CUSTOMER_LOCK/CANDIDATE_POOL (see RuleCreate's own docstring) - other
+    // phases fall back to threshold, same default this always used, even
+    // though it was never actually persisted before (2026-08 fix: this
+    // whole function used to fabricate a fake client-side draft with a
+    // Date.now() id and never call the backend at all - editing/saving it
+    // would 404, since that id never existed server-side).
+    const kind = phaseKey === 'customer-lock' || phaseKey === 'candidate-pool' ? 'field-match' : 'threshold';
+    const priority = (rulesInPhase[rulesInPhase.length - 1]?.priority ?? 0) + 10;
+    // service.create_rule validates a field-match config at creation time
+    // (_validate_field_match_config - matcher/bank_field/source/
+    // source_field must all be non-empty, or it 400s immediately) - an
+    // empty {} config, which is what this used to send, always failed
+    // right here (2026-08 fix). Give it a real, sensible starting point
+    // instead (narration contains the customer's company name - same
+    // spirit as the existing fuzzy-name/token_overlap rules) so creation
+    // succeeds; the editor is where the user actually customizes it.
+    const config = kind === 'field-match'
+      ? { matcher: 'substring', bank_field: 'narration', source: 'customers', source_field: 'company_name' }
+      : {};
+    try {
+      const created = await arService.createARRule(definitionId, {
+        phase: phaseKey,
+        kind,
+        name: `New Custom Rule ${rulesInPhase.length + 1}`,
+        priority,
+        confidence: null,
+        config,
+      });
+      setRules((prev) => [...prev, created]);
+      setEditingRuleId(created.id);
+      toast('Rule created', 'ok');
+    } catch {
+      toast('Failed to create rule on server', 'bad');
+    }
   };
 
   return (
@@ -255,6 +279,7 @@ export const ARRulesStudioTab: React.FC = () => {
               onMoveRuleDown={handleMoveRuleDown}
               onUpdateRule={handleUpdateRule}
               onAddRule={handleAddRule}
+              definitionId={definitionId ?? undefined}
             />
           ))}
         </div>

@@ -31,6 +31,7 @@ interface ARGroupRowProps {
   onMoveRuleDown: (id: string) => void;
   onUpdateRule: (r: ARRule) => void;
   onAddRule: (phaseKey: string) => void;
+  definitionId?: string;
 }
 
 export const ARGroupRow: React.FC<ARGroupRowProps> = ({
@@ -45,6 +46,7 @@ export const ARGroupRow: React.FC<ARGroupRowProps> = ({
   onMoveRuleDown,
   onUpdateRule,
   onAddRule,
+  definitionId,
 }) => {
   // Compute flattened rule numbers across the whole group
   const ruleNumbers: Record<string, number> = {};
@@ -120,6 +122,7 @@ export const ARGroupRow: React.FC<ARGroupRowProps> = ({
                     onMoveRuleDown={onMoveRuleDown}
                     onUpdateRule={onUpdateRule}
                     onAddRule={onAddRule}
+                    definitionId={definitionId}
                   />
                   {idx < group.subPhases.length - 1 && <div className="tl-subdivider" />}
                 </React.Fragment>

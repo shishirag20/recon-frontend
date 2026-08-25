@@ -188,6 +188,7 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ run, exception
           (e.customer_code || '').toLowerCase().includes(q) ||
           (e.invoice_number || '').toLowerCase().includes(q) ||
           (e.bank_reference || '').toLowerCase().includes(q) ||
+          (e.bank_txn_source_id || '').toLowerCase().includes(q) ||
           (e.customer_id || '').toLowerCase().includes(q) ||
           e.exception_id.toLowerCase().includes(q)
         );
@@ -843,7 +844,7 @@ export const ARExceptionsTab: React.FC<ARExceptionsTabProps> = ({ run, exception
                       <div>
                         <div className="text-[13px] font-semibold text-slate-900">{activeException.payer_name || 'Unknown Payer'}</div>
                         <div className="text-[11.5px] text-slate-500">
-                          {activeException.bank_reference || shortId(activeException.bank_txn_id)}
+                          {activeException.bank_txn_source_id || activeException.bank_reference || shortId(activeException.bank_txn_id)}
                         </div>
                       </div>
                       <div className="text-right font-mono text-[13px] font-semibold text-amber-700">

@@ -333,6 +333,7 @@ interface ARRuleCardProps {
   onMoveUp: () => void;
   onMoveDown: () => void;
   onUpdateRule: (updated: ARRule) => void;
+  definitionId?: string;
 }
 
 export const ARRuleCard: React.FC<ARRuleCardProps> = ({
@@ -347,6 +348,7 @@ export const ARRuleCard: React.FC<ARRuleCardProps> = ({
   onMoveUp,
   onMoveDown,
   onUpdateRule,
+  definitionId,
 }) => {
   const [draftRule, setDraftRule] = useState<ARRule>(rule);
 
@@ -488,6 +490,7 @@ export const ARRuleCard: React.FC<ARRuleCardProps> = ({
           rule={draftRule}
           matchedCount={matchedCount}
           onUpdateRule={setDraftRule}
+          definitionId={definitionId}
         />
       )}
     </div>

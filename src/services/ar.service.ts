@@ -10,7 +10,22 @@ import type {
   BankStatement,
   Customer,
   ARResolution,
+  MatcherCatalog,
 } from '../types';
+
+// Reverse of normalizeRule's phaseMap below - ARRule.phase is kebab-case
+// for display grouping, but the backend's RuleCreate.phase needs the real
+// enum string (RECON_PHASES).
+const PHASE_TO_BACKEND: Record<string, string> = {
+  'customer-lock': 'CUSTOMER_LOCK',
+  'candidate-pool': 'CANDIDATE_POOL',
+  'narration-check': 'NARRATION_CHECK',
+  'allocation': 'ALLOCATION',
+  'intake': 'INTAKE_VALIDATION',
+  'short-pay': 'SHORT_PAY',
+  'unapplied': 'UNAPPLIED',
+  'gl-check': 'GL_CHECK',
+};
 
 const isUUID = (str?: string): boolean =>
   !!str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
@@ -132,6 +147,56 @@ export const arService = {
       config: rule.config || rule.cond,
     });
     return normalizeRule(res);
+  },
+
+  /**
+   * Creates a brand-new rule via POST /reconciliations/{id}/rules - a real
+   * backend row with a real rule_id, unlike the old "Add rule" flow which
+   * only ever produced a fake client-side draft (2026-08 fix). `phase` is
+   * ARRule's own kebab-case display value (e.g. "candidate-pool") -
+   * converted to the real backend enum here so callers don't have to know
+   * the difference.
+   */
+  async createARRule(
+    id: string,
+    rule: { phase: string; kind: string; name: string; priority: number; confidence?: number | null; config?: Record<string, any> }
+  ): Promise<ARRule> {
+    const validId = await resolveARDefinitionId(id);
+    const backendPhase = PHASE_TO_BACKEND[rule.phase] || rule.phase.toUpperCase().replace(/-/g, '_');
+    const res = await api.post<any>(`/reconciliations/${validId}/rules`, {
+      phase: backendPhase,
+      kind: rule.kind,
+      name: rule.name,
+      priority: rule.priority,
+      confidence: rule.confidence ?? null,
+      config: rule.config || {},
+    });
+    return normalizeRule(res);
+  },
+
+  /**
+   * Picker data (matcher/source/source_field/bank_field choices) for
+   * building a kind="field-match" rule - real, wired matchers
+   * (app/reconciliation/rules/matchers.py), not generic_functions.py's
+   * unwired primitives.
+   *
+   * Passing `definitionId` additionally scopes the response to that
+   * definition's entity - the backend then merges in `raw:<key>` field
+   * options discovered live from that entity's own uploaded (and still
+   * canonical-field-unmapped) columns, e.g. a "Business Partner Code"
+   * column with no field_mapping (2026-08). Omit it to get only the fixed
+   * matcher/source/bank_field lists.
+   */
+  async getMatcherCatalog(definitionId?: string): Promise<MatcherCatalog> {
+    if (!definitionId) {
+      return api.get<MatcherCatalog>('/reconciliations/matchers');
+    }
+    const validId = await resolveARDefinitionId(definitionId);
+    const definition = await api.get<any>(`/reconciliations/${validId}`);
+    const entityId = definition?.entity_id;
+    return api.get<MatcherCatalog>(
+      entityId ? `/reconciliations/matchers?entity_id=${entityId}` : '/reconciliations/matchers'
+    );
   },
 
   /**

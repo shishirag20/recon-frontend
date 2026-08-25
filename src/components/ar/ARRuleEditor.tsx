@@ -1,13 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import type { ARRule } from '../../types';
+import type { ARRule, MatcherCatalog } from '../../types';
 import { getRuleDisplayFields } from './ARRuleCard';
 import { fieldMappingService } from '../../services/dataHub.service';
+import { arService } from '../../services/ar.service';
 import { humanizeField } from '../../utils/formatters';
 
 interface ARRuleEditorProps {
   rule: ARRule;
   matchedCount?: number;
   onUpdateRule: (updated: ARRule) => void;
+  // Scopes the matcher catalog fetch to this definition's entity, so the
+  // source/source_field/bank_field pickers include raw:<key> options for
+  // that entity's own still-unmapped ingestion columns (2026-08). Optional
+  // - omit to fall back to the fixed matcher/source/bank_field lists only.
+  definitionId?: string;
 }
 
 interface RuleParamConfig {
@@ -161,10 +167,12 @@ export const ARRuleEditor: React.FC<ARRuleEditorProps> = ({
   rule,
   matchedCount = 0,
   onUpdateRule,
+  definitionId,
 }) => {
   const { bankField, secondSource, secondField } = getRuleDisplayFields(rule);
   const [bankFieldOptions, setBankFieldOptions] = useState<string[]>([]);
   const [targetFieldOptions, setTargetFieldOptions] = useState<string[]>([]);
+  const [matcherCatalog, setMatcherCatalog] = useState<MatcherCatalog | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -187,6 +195,22 @@ export const ARRuleEditor: React.FC<ARRuleEditorProps> = ({
       cancelled = true;
     };
   }, []);
+
+  // Only field-match rules need this (the real matcher/source/source_field
+  // picker, backed by rules.matchers.MATCHER_CATALOG - see the render
+  // branch below), but it's small static reference data, cheap to always
+  // have on hand rather than re-fetching every time a rule's kind changes.
+  useEffect(() => {
+    let cancelled = false;
+    arService.getMatcherCatalog(definitionId).then((catalog) => {
+      if (!cancelled) setMatcherCatalog(catalog);
+    }).catch(() => {
+      // Field-match editing degrades to empty pickers - not fatal.
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [definitionId]);
 
   const handleChangeName = (e: React.ChangeEvent<HTMLInputElement>) => {
     onUpdateRule({ ...rule, name: e.target.value });
@@ -215,13 +239,36 @@ export const ARRuleEditor: React.FC<ARRuleEditorProps> = ({
           <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
             MATCHER
           </label>
-          <select
-            value={rule.kind}
-            onChange={(e) => onUpdateRule({ ...rule, kind: e.target.value })}
-            className="w-full bg-white border border-slate-200 rounded-lg px-3 h-9 text-xs font-semibold text-slate-800 focus:outline-none focus:border-indigo-600 shadow-2xs"
-          >
-            <option value={rule.kind}>{rule.name}</option>
-          </select>
+          {rule.kind === 'field-match' ? (
+            // A real, wired choice (rules.matchers.MATCHER_CATALOG) - every
+            // other kind below is a hardcoded, built-in rule with no
+            // matcher to pick (2026-08 fix: this used to be a single-option
+            // dropdown showing the rule's own kind/name, unchangeable -
+            // "MATCHER" in name only).
+            <select
+              value={rule.config?.matcher || ''}
+              onChange={(e) => {
+                const newConfig = { ...(rule.config || {}), matcher: e.target.value };
+                onUpdateRule({ ...rule, config: newConfig });
+              }}
+              className="w-full bg-white border border-slate-200 rounded-lg px-3 h-9 text-xs font-semibold text-slate-800 focus:outline-none focus:border-indigo-600 shadow-2xs"
+            >
+              <option value="">Choose a matcher…</option>
+              {(matcherCatalog?.matchers || []).map((m) => (
+                <option key={m.kind} value={m.kind} title={m.description}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <select
+              value={rule.kind}
+              onChange={(e) => onUpdateRule({ ...rule, kind: e.target.value })}
+              className="w-full bg-white border border-slate-200 rounded-lg px-3 h-9 text-xs font-semibold text-slate-800 focus:outline-none focus:border-indigo-600 shadow-2xs"
+            >
+              <option value={rule.kind}>{rule.name}</option>
+            </select>
+          )}
         </div>
 
         <div>
@@ -245,6 +292,74 @@ export const ARRuleEditor: React.FC<ARRuleEditorProps> = ({
         {rule.kind === 'dup-utr' ? (
           <div className="text-[11.5px] text-slate-600 font-mono bg-slate-200/60 px-2.5 py-1.5 rounded-md inline-block">
             Bank reference number (UTR) ↔ every other bank reference number in this run
+          </div>
+        ) : rule.kind === 'field-match' ? (
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="bg-slate-200/70 border border-slate-200 px-3 py-1.5 rounded-lg text-slate-700 font-medium text-[11.5px]">
+              Bank Statement
+            </span>
+
+            <select
+              value={rule.config?.bank_field || ''}
+              onChange={(e) => {
+                const newConfig = { ...(rule.config || {}), bank_field: e.target.value };
+                onUpdateRule({ ...rule, config: newConfig });
+              }}
+              className="bg-white border border-slate-200 rounded-lg px-3 h-9 font-medium text-[11.5px] text-slate-800 focus:outline-none focus:border-indigo-600 shadow-2xs min-w-35"
+            >
+              <option value="">Choose a field…</option>
+              {(matcherCatalog?.bank_fields || []).map((f) => (
+                <option key={f} value={f}>
+                  {f.startsWith('extract:') ? f : humanizeField(f)}
+                </option>
+              ))}
+            </select>
+
+            <span className="text-slate-400 font-bold text-xs px-0.5">↔</span>
+
+            <select
+              value={rule.config?.source || ''}
+              onChange={(e) => {
+                // Changing the source invalidates whatever source_field was
+                // picked against the old one - clear it rather than leave a
+                // field name that doesn't belong to the new source.
+                const newConfig = { ...(rule.config || {}), source: e.target.value, source_field: '' };
+                onUpdateRule({ ...rule, config: newConfig });
+              }}
+              className="bg-white border border-slate-200 rounded-lg px-3 h-9 font-medium text-[11.5px] text-slate-800 focus:outline-none focus:border-indigo-600 shadow-2xs min-w-40"
+            >
+              <option value="">Choose a source…</option>
+              {(matcherCatalog?.sources || []).map((s) => (
+                // humanizeField, not formatSecondSourceLabel - that one does
+                // loose substring matching ("customer" in the name) built
+                // for the old bespoke-rule 3-value system, which collapses
+                // customers/customer_bank_accounts/customer_reference_codes
+                // into the same "Customer Master" label here since all
+                // three contain "customer" (2026-08 fix - config.source and
+                // the field list were still correct underneath, only the
+                // label was wrong, making three different sources look
+                // identical).
+                <option key={s.source} value={s.source}>
+                  {humanizeField(s.source)}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={rule.config?.source_field || ''}
+              onChange={(e) => {
+                const newConfig = { ...(rule.config || {}), source_field: e.target.value };
+                onUpdateRule({ ...rule, config: newConfig });
+              }}
+              className="bg-white border border-slate-200 rounded-lg px-3 h-9 font-mono text-[11.5px] text-slate-800 focus:outline-none focus:border-indigo-600 shadow-2xs min-w-40"
+            >
+              <option value="">Choose a field…</option>
+              {(matcherCatalog?.sources.find((s) => s.source === rule.config?.source)?.fields || []).map((f) => (
+                <option key={f} value={f}>
+                  {humanizeField(f)}
+                </option>
+              ))}
+            </select>
           </div>
         ) : (
           <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -322,6 +437,49 @@ export const ARRuleEditor: React.FC<ARRuleEditorProps> = ({
           </div>
         )}
       </div>
+
+      {/* Row 2b: matcher-specific tunable (numeric_suffix's suffix_length,
+          trigram_similarity's min_similarity) - only field-match rules have
+          a selected matcher with extra config_keys to expose. */}
+      {rule.kind === 'field-match' && rule.config?.matcher && (() => {
+        const selected = (matcherCatalog?.matchers || []).find((m) => m.kind === rule.config?.matcher);
+        if (!selected || selected.config_keys.length === 0) return null;
+        return (
+          <div className="flex flex-wrap items-center gap-3 text-xs">
+            {selected.config_keys.includes('suffix_length') && (
+              <label className="flex items-center gap-2 text-[11.5px] text-slate-600">
+                Suffix length
+                <input
+                  type="number"
+                  min={1}
+                  value={rule.config?.suffix_length ?? 4}
+                  onChange={(e) => {
+                    const newConfig = { ...(rule.config || {}), suffix_length: Number(e.target.value) };
+                    onUpdateRule({ ...rule, config: newConfig });
+                  }}
+                  className="w-16 bg-white border border-slate-200 rounded-lg px-2 h-8 font-mono text-[11.5px] text-slate-800 focus:outline-none focus:border-indigo-600 shadow-2xs"
+                />
+              </label>
+            )}
+            {selected.config_keys.includes('min_similarity') && (
+              <label className="flex items-center gap-2 text-[11.5px] text-slate-600">
+                Min similarity (%)
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={Math.round((rule.config?.min_similarity ?? 0.85) * 100)}
+                  onChange={(e) => {
+                    const newConfig = { ...(rule.config || {}), min_similarity: Number(e.target.value) / 100 };
+                    onUpdateRule({ ...rule, config: newConfig });
+                  }}
+                  className="w-16 bg-white border border-slate-200 rounded-lg px-2 h-8 font-mono text-[11.5px] text-slate-800 focus:outline-none focus:border-indigo-600 shadow-2xs"
+                />
+              </label>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Row 3: TUNABLE PARAMETER & CONFIDENCE */}
       <div className="pt-2 border-t border-slate-200/80 space-y-2">
