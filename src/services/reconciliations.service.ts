@@ -27,6 +27,23 @@ function mapReconType(recon_type?: string): Reconciliation['category'] {
   }
 }
 
+/** Maps DefinitionOut.status (NOT_RUN | NEEDS_RESOLUTION | the latest run's
+ * raw QUEUED/RUNNING/COMPUTED/FAILED status) to ReconciliationCard's badge
+ * strings. QUEUED/RUNNING read naturally as "In progress" to a user; FAILED
+ * has no dedicated badge state today, so it surfaces as "Needs resolution" -
+ * a failed run is exactly the kind of thing that needs a look. */
+function mapDefinitionStatus(status?: string): Reconciliation['status'] {
+  switch (status) {
+    case 'NOT_RUN': return 'Not run yet';
+    case 'NEEDS_RESOLUTION': return 'Needs resolution';
+    case 'COMPUTED': return 'Review ready';
+    case 'QUEUED':
+    case 'RUNNING': return 'In progress';
+    case 'FAILED': return 'Needs resolution';
+    default: return status ?? 'Not run yet';
+  }
+}
+
 export const reconciliationsService = {
   /**
    * List all configured reconciliation jobs/modules.
@@ -40,20 +57,25 @@ export const reconciliationsService = {
       id: d.definition_id ?? d.id ?? '',
       name: d.name ?? '',
       category: mapReconType(d.recon_type),
-      // Run-derived stats — only available after a COMPUTED run; absent from DefinitionOut
-      status: d.status ?? 'Not run yet',
+      // Run-derived stats — DefinitionOut now joins each definition to its
+      // own latest run (see ReconciliationService._summarize_definition on
+      // the backend); every field below is real, not a guessed key name.
+      status: mapDefinitionStatus(d.status),
       matchRate: d.match_rate ?? 0,
-      totalRows: d.total_rows ?? 0,
-      matchedRows: d.matched_rows ?? d.matched_count ?? 0,
-      unmatchedRows: d.unmatched_rows ?? 0,
-      exceptionsCount: d.exception_count ?? d.exceptions_count ?? 0,
-      autoResolvedCount: d.auto_resolved_count ?? 0,
-      unreconciledAmount: d.unreconciled_amount ?? undefined,
-      // Definition-level metadata
-      owner: d.owner_user_id ?? d.owner ?? undefined,
-      due: d.due_date ?? d.due ?? undefined,
+      totalRows: d.volume ?? 0,
+      matchedRows: d.matched_count ?? 0,
+      unmatchedRows: d.open_exceptions ?? 0,
+      exceptionsCount: d.open_exceptions ?? 0,
+      autoResolvedCount: 0,
+      // unreconciled_minor is paise/cents - the card displays rupees.
+      unreconciledAmount: typeof d.unreconciled_minor === 'number' ? d.unreconciled_minor / 100 : undefined,
+      // Definition-level metadata. `due` has no backing column yet - a real
+      // due-date feature would need its own schema decision, out of scope
+      // for wiring up the run stats this card is otherwise missing.
+      owner: d.owner_user_id ?? undefined,
+      due: undefined,
       cadence: d.cadence ?? undefined,
-      lastRun: d.last_run_at ?? d.last_run ?? undefined,
+      lastRun: d.last_run_at ?? undefined,
       sourceLeft: d.source_left ?? '',
       sourceRight: d.source_right ?? '',
     }));

@@ -5,6 +5,14 @@ import { fieldMappingService } from '../../services/dataHub.service';
 import { arService } from '../../services/ar.service';
 import { humanizeField } from '../../utils/formatters';
 
+// Both kinds share the exact same config shape (matcher/bank_field/source/
+// source_field - see app/reconciliation/rules/matchers.find_matches and
+// narration_group_match) so they share this real, wired MATCHER/COMPARES
+// picker UI too - 'sequential-narration-match' (2026-08d) is the
+// NARRATION_CHECK-phase, customer-less, one-to-many sibling of
+// 'field-match' (CUSTOMER_LOCK/CANDIDATE_POOL).
+const FIELD_MATCH_LIKE_KINDS = new Set(['field-match', 'sequential-narration-match']);
+
 interface ARRuleEditorProps {
   rule: ARRule;
   matchedCount?: number;
@@ -239,7 +247,7 @@ export const ARRuleEditor: React.FC<ARRuleEditorProps> = ({
           <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
             MATCHER
           </label>
-          {rule.kind === 'field-match' ? (
+          {FIELD_MATCH_LIKE_KINDS.has(rule.kind) ? (
             // A real, wired choice (rules.matchers.MATCHER_CATALOG) - every
             // other kind below is a hardcoded, built-in rule with no
             // matcher to pick (2026-08 fix: this used to be a single-option
@@ -293,7 +301,7 @@ export const ARRuleEditor: React.FC<ARRuleEditorProps> = ({
           <div className="text-[11.5px] text-slate-600 font-mono bg-slate-200/60 px-2.5 py-1.5 rounded-md inline-block">
             Bank reference number (UTR) ↔ every other bank reference number in this run
           </div>
-        ) : rule.kind === 'field-match' ? (
+        ) : FIELD_MATCH_LIKE_KINDS.has(rule.kind) ? (
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="bg-slate-200/70 border border-slate-200 px-3 py-1.5 rounded-lg text-slate-700 font-medium text-[11.5px]">
               Bank Statement
@@ -441,7 +449,7 @@ export const ARRuleEditor: React.FC<ARRuleEditorProps> = ({
       {/* Row 2b: matcher-specific tunable (numeric_suffix's suffix_length,
           trigram_similarity's min_similarity) - only field-match rules have
           a selected matcher with extra config_keys to expose. */}
-      {rule.kind === 'field-match' && rule.config?.matcher && (() => {
+      {FIELD_MATCH_LIKE_KINDS.has(rule.kind) && rule.config?.matcher && (() => {
         const selected = (matcherCatalog?.matchers || []).find((m) => m.kind === rule.config?.matcher);
         if (!selected || selected.config_keys.length === 0) return null;
         return (

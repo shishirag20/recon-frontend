@@ -79,7 +79,7 @@ export interface Reconciliation {
   id: string;
   name: string;
   category: 'bank-cash' | 'ar' | 'ar-reconciliation' | 'intercompany' | 'ap' | 'bank' | string;
-  status: 'active' | 'draft' | 'paused' | 'Needs resolution' | 'Review ready' | 'In progress' | 'Not run yet';
+  status: 'active' | 'draft' | 'paused' | 'Needs resolution' | 'Review ready' | 'In progress' | 'Not run yet' | string;
   matchRate: number;
   totalRows: number;
   matchedRows: number;
@@ -362,6 +362,15 @@ export interface MatchGroupOut {
   locked_by_rule_id: string | null;
   /** The "Invoice Number in Narration" cross-check rule - set only when it found a narration-referenced invoice and confirmed it belongs to the locked customer. */
   narration_crosscheck_rule_id: string | null;
+  /** The CANDIDATE_POOL-phase rule (or, when none fired, the NARRATION_CHECK
+   * cross-check's single-candidate fallback) that produced candidate_pool.
+   * Mutually exclusive with locked_by_rule_id. Null on older matches from
+   * before this was tracked, even if candidate_pool itself is non-empty. */
+  pooled_by_rule_id: string | null;
+  /** Non-empty only when Phase 1a locked nobody and a Phase 1b (CANDIDATE_POOL)
+   * rule pooled candidates instead - locked_by_rule_id is null in exactly
+   * this case, so the two are mutually exclusive on a given match group. */
+  candidate_pool: { customer_id: string; customer_name: string | null }[];
   confidence: number | null;
   status: 'AUTO_MATCHED' | 'SUGGESTED' | 'CONFIRMED' | 'REJECTED' | string;
   reason: string | null;

@@ -22,7 +22,11 @@ export const ReconciliationCard: React.FC<ReconciliationCardProps> = ({ job, onR
   };
 
   const isNeedsResolution = job.status === 'Needs resolution' || (job.exceptionsCount && job.exceptionsCount > 0);
-  const hasRunData = job.totalRows > 0 || job.matchedRows > 0;
+  // A real run can legitimately have zero volume (e.g. only stale-invoice
+  // NO_PAYMENT exceptions, no bank transactions that period) - totalRows/
+  // matchedRows alone can't distinguish that from "never run". lastRun can:
+  // it's only unset when the definition truly has no runs at all.
+  const hasRunData = Boolean(job.lastRun) || job.totalRows > 0 || job.matchedRows > 0;
 
   const getStatusBadge = () => {
     if (job.status === 'Needs resolution' || (job.exceptionsCount && job.exceptionsCount > 0)) {

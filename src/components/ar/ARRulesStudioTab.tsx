@@ -6,7 +6,11 @@ import { ARGroupRow, type PhaseGroupMeta } from './ARGroupRow';
 import { useToast } from '../../hooks/useToast';
 import { Loader2 } from 'lucide-react';
 
-const PHASE_GROUPS: PhaseGroupMeta[] = [
+// Exported so ARMatchedTab's "Resolved Via" column can compute the same
+// "Rule 2.10"-style numbering Rules Studio shows, from the same single
+// source of truth - a locally-redefined copy here would drift the moment
+// this list changes.
+export const PHASE_GROUPS: PhaseGroupMeta[] = [
   {
     key: 'group-intake',
     priority: 1,
@@ -209,25 +213,38 @@ export const ARRulesStudioTab: React.FC = () => {
     if (!definitionId) return;
     const rulesInPhase = rules.filter((r) => r.phase === phaseKey);
     // field-match (rules.matchers.find_matches) is the only kind that's
-    // actually composable without a code change, and only for
-    // CUSTOMER_LOCK/CANDIDATE_POOL (see RuleCreate's own docstring) - other
-    // phases fall back to threshold, same default this always used, even
-    // though it was never actually persisted before (2026-08 fix: this
-    // whole function used to fabricate a fake client-side draft with a
-    // Date.now() id and never call the backend at all - editing/saving it
-    // would 404, since that id never existed server-side).
-    const kind = phaseKey === 'customer-lock' || phaseKey === 'candidate-pool' ? 'field-match' : 'threshold';
+    // actually composable without a code change for CUSTOMER_LOCK/
+    // CANDIDATE_POOL (see RuleCreate's own docstring); NARRATION_CHECK gets
+    // its own customer-less sibling kind, sequential-narration-match
+    // (2026-08d - groups every open invoice sharing one narration-matched
+    // field value, e.g. a raw Business Partner Code column, and settles
+    // them via the same oldest-due-first waterfall sequential-amount-match
+    // uses). Every other phase falls back to threshold, same default this
+    // always used, even though it was never actually persisted before
+    // (2026-08 fix: this whole function used to fabricate a fake
+    // client-side draft with a Date.now() id and never call the backend at
+    // all - editing/saving it would 404, since that id never existed
+    // server-side).
+    const kind =
+      phaseKey === 'customer-lock' || phaseKey === 'candidate-pool' ? 'field-match'
+      : phaseKey === 'narration-check' ? 'sequential-narration-match'
+      : 'threshold';
     const priority = (rulesInPhase[rulesInPhase.length - 1]?.priority ?? 0) + 10;
-    // service.create_rule validates a field-match config at creation time
-    // (_validate_field_match_config - matcher/bank_field/source/
+    // service.create_rule validates a field-match(-like) config at creation
+    // time (_validate_field_match_config - matcher/bank_field/source/
     // source_field must all be non-empty, or it 400s immediately) - an
     // empty {} config, which is what this used to send, always failed
     // right here (2026-08 fix). Give it a real, sensible starting point
-    // instead (narration contains the customer's company name - same
-    // spirit as the existing fuzzy-name/token_overlap rules) so creation
-    // succeeds; the editor is where the user actually customizes it.
-    const config = kind === 'field-match'
-      ? { matcher: 'substring', bank_field: 'narration', source: 'customers', source_field: 'company_name' }
+    // instead so creation succeeds; the editor is where the user actually
+    // customizes it. narration-check defaults to source="invoices" (the
+    // only source this kind is meant for - see narration_group_match) and
+    // source_field="invoice_number" (always present, unlike a raw field
+    // that may not exist on every upload) - the whole point of this rule is
+    // usually a different, per-upload field (e.g. raw:Business_Partner_
+    // Code), picked in the editor afterward.
+    const config =
+      kind === 'field-match' ? { matcher: 'substring', bank_field: 'narration', source: 'customers', source_field: 'company_name' }
+      : kind === 'sequential-narration-match' ? { matcher: 'substring', bank_field: 'narration', source: 'invoices', source_field: 'invoice_number' }
       : {};
     try {
       const created = await arService.createARRule(definitionId, {

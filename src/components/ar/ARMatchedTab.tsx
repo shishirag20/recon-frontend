@@ -4,6 +4,8 @@ import { Button } from '../ui/Button';
 import { Undo2 } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
 import { RULE_METADATA } from './ARRuleCard';
+import { PHASE_GROUPS } from './ARRulesStudioTab';
+import { computeRuleNumbers } from '../../utils/ruleNumbering';
 import type { GatewaySettlement, AREngineResult, RunOut, MatchGroupOut, ExceptionOut, ARRule } from '../../types';
 
 interface ARMatchedTabProps {
@@ -80,6 +82,16 @@ export const ARMatchedTab: React.FC<ARMatchedTabProps> = ({ run, matches, except
     // Studio never shows up here (2026-08 fix, same as ARRuleCard.tsx).
     return rule.name || RULE_METADATA[rule.kind]?.label || rule.kind;
   };
+
+  // "Rule 2.10"-style numbers, same scheme and same source data (rulesById)
+  // Rules Studio itself uses - see computeRuleNumbers' own docstring for why
+  // this isn't a second, independently-written copy of that logic.
+  const ruleNumbers = useMemo(
+    () => computeRuleNumbers(Object.values(rulesById), PHASE_GROUPS),
+    [rulesById]
+  );
+  const ruleNumberLabel = (ruleId: string | null): string | null =>
+    ruleId && ruleNumbers[ruleId] ? `Rule ${ruleNumbers[ruleId]}` : null;
 
   const gatewaySettlements: GatewaySettlement[] = arResult?.gatewaySettlements || [];
 
@@ -308,28 +320,60 @@ export const ARMatchedTab: React.FC<ARMatchedTabProps> = ({ run, matches, except
                           </td>
                         )}
 
-                        {/* Resolved Via column - spans all rows; match-type badge + the two
-                            real rules that fired (CUSTOMER_LOCK identification, then
-                            ALLOCATION), each with its actual reason text underneath. */}
+                        {/* Resolved Via column - spans all rows; match-type badge + every
+                            rule that actually fired (CUSTOMER_LOCK identification or the
+                            CANDIDATE_POOL it was narrowed from - mutually exclusive, then
+                            ALLOCATION), each tagged with its Rules Studio number and its
+                            actual reason text underneath. */}
                         {isFirst && (
                           <td rowSpan={group.allocations.length} className="px-4 py-3.5 align-middle space-y-2">
                             <span className="inline-block px-2 py-0.5 rounded-md text-[10.5px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
                               {group.match_type}
                             </span>
-                            {group.locked_by_rule_id && (
+                            {group.locked_by_rule_id ? (
                               <div className="text-[12.5px] text-slate-800">
                                 <span className="font-semibold text-slate-900">{ruleLabel(group.locked_by_rule_id)}</span>
+                                {ruleNumberLabel(group.locked_by_rule_id) && (
+                                  <span className="ml-1.5 font-mono text-[10px] font-semibold text-indigo-600 bg-indigo-50 border border-indigo-100 rounded px-1 py-px">
+                                    {ruleNumberLabel(group.locked_by_rule_id)}
+                                  </span>
+                                )}
                                 <span className="text-slate-400"> · customer lock</span>
                               </div>
-                            )}
+                            ) : group.candidate_pool.length > 0 ? (
+                              <div className="text-[12.5px] text-slate-800">
+                                <span className="font-semibold text-slate-900">
+                                  {group.pooled_by_rule_id ? ruleLabel(group.pooled_by_rule_id) : 'Candidate Pool'}
+                                </span>
+                                {group.pooled_by_rule_id && ruleNumberLabel(group.pooled_by_rule_id) && (
+                                  <span className="ml-1.5 font-mono text-[10px] font-semibold text-indigo-600 bg-indigo-50 border border-indigo-100 rounded px-1 py-px">
+                                    {ruleNumberLabel(group.pooled_by_rule_id)}
+                                  </span>
+                                )}
+                                <div className="text-[11.5px] text-slate-500 font-normal mt-0.5">
+                                  {group.candidate_pool.length} candidate{group.candidate_pool.length === 1 ? '' : 's'}:{' '}
+                                  {group.candidate_pool.map((c) => c.customer_name || shortId(c.customer_id)).join(', ')}
+                                </div>
+                              </div>
+                            ) : null}
                             {group.narration_crosscheck_rule_id && (
                               <div className="text-[12.5px] text-slate-800">
                                 <span className="font-semibold text-slate-900">{ruleLabel(group.narration_crosscheck_rule_id)}</span>
+                                {ruleNumberLabel(group.narration_crosscheck_rule_id) && (
+                                  <span className="ml-1.5 font-mono text-[10px] font-semibold text-indigo-600 bg-indigo-50 border border-indigo-100 rounded px-1 py-px">
+                                    {ruleNumberLabel(group.narration_crosscheck_rule_id)}
+                                  </span>
+                                )}
                                 <span className="text-slate-400"> · confirmed</span>
                               </div>
                             )}
                             <div className="text-[12.5px] text-slate-800">
                               <span className="font-semibold text-slate-900">{ruleLabel(group.rule_id, group.match_type)}</span>
+                              {ruleNumberLabel(group.rule_id) && (
+                                <span className="ml-1.5 font-mono text-[10px] font-semibold text-indigo-600 bg-indigo-50 border border-indigo-100 rounded px-1 py-px">
+                                  {ruleNumberLabel(group.rule_id)}
+                                </span>
+                              )}
                               {group.reason && (
                                 <div className="text-[11.5px] text-slate-500 font-normal mt-0.5">{group.reason}</div>
                               )}

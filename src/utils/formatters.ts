@@ -58,7 +58,12 @@ const KNOWN_FIELD_LABELS: Record<string, string> = {
 
 export function humanizeField(str: string): string {
   if (!str) return '';
-  const trimmed = str.trim();
+  // "raw:<key>" is a sentinel (ARRuleEditor's bank_field/source_field
+  // pickers) for an entity's still-unmapped ingestion column, e.g.
+  // "raw:Business_Partner_Description" - the prefix is only meaningful to
+  // the matcher config, not something a user should see in a label.
+  const withoutRawPrefix = str.startsWith('raw:') ? str.slice(4) : str;
+  const trimmed = withoutRawPrefix.trim();
   const lower = trimmed.toLowerCase();
   if (KNOWN_FIELD_LABELS[lower]) return KNOWN_FIELD_LABELS[lower];
   if (KNOWN_FIELD_LABELS[trimmed]) return KNOWN_FIELD_LABELS[trimmed];
