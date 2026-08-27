@@ -14,6 +14,7 @@ import { ingestionJobService, dataSourceService, fieldMappingService } from '../
 import { useToast } from '../../hooks/useToast';
 import { FieldMappingTransformModal } from './FieldMappingTransformModal';
 import { BatchJobStartedModal } from './BatchJobStartedModal';
+import { IngestionErrorsDrawer } from './IngestionErrorsDrawer';
 import {
   CATEGORY_ICONS,
   CATEGORY_DESCRIPTIONS,
@@ -31,9 +32,10 @@ export const JobsTab: React.FC<JobsTabProps> = ({
   jobs,
   onViewJob,
   onJobComplete,
-  onRetry: _onRetry,
+  onRetry,
 }) => {
   const [dataSources, setDataSources] = useState<DataSourceOut[]>([]);
+  const [errorsJobId, setErrorsJobId] = useState<string | null>(null);
   const [activeUploadingSourceId, setActiveUploadingSourceId] = useState<string | null>(null);
   const [activeUploadingStream, setActiveUploadingStream] = useState<string>('BANK');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -313,9 +315,27 @@ export const JobsTab: React.FC<JobsTabProps> = ({
                       {job.row_count}
                     </td>
                     <td className="px-4 py-3 text-right font-semibold tnum">
-                      <span className={job.error_count > 0 ? 'text-rose-600' : 'text-slate-400'}>
-                        {job.error_count}
-                      </span>
+                      {job.error_count > 0 ? (
+                        // The count was previously the end of the story: an
+                        // analyst could see that 37 rows broke but had nowhere
+                        // to learn why. It is now the way in.
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation(); // the row itself navigates to the Explorer
+                            setErrorsJobId(job.job_id);
+                          }}
+                          aria-label={`View why ${job.error_count} rows errored in ${job.file_name || 'this job'}`}
+                          // No padding or icon: the digits have to land on the
+                          // same right edge as the plain `0` below, or the
+                          // column stops being scannable as a number column.
+                          className="text-rose-700 underline decoration-rose-300 underline-offset-2 hover:decoration-rose-700 transition-colors rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
+                        >
+                          {job.error_count}
+                        </button>
+                      ) : (
+                        <span className="text-slate-500">0</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-right font-mono text-slate-400">
                       {job.started_at.slice(0, 10)} {job.started_at.slice(11, 16)}
@@ -368,6 +388,14 @@ export const JobsTab: React.FC<JobsTabProps> = ({
           onConfirmMapping={handleConfirmMapping}
         />
       )}
+
+      {/* Why a job's rows errored — opened from the Errors count */}
+      <IngestionErrorsDrawer
+        key={errorsJobId ?? 'closed'}
+        jobId={errorsJobId}
+        onClose={() => setErrorsJobId(null)}
+        onRetry={onRetry}
+      />
 
       {/* Step 2: Batch Job Started Modal */}
       {createdBatchJob && (

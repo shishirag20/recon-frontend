@@ -58,6 +58,7 @@ export const API_ROUTES = {
     INGESTION_JOBS: `/ingestion-jobs`,
     INGESTION_JOB: (id: string) => `/ingestion-jobs/${id}`,
     INGESTION_JOB_RETRY: (id: string) => `/ingestion-jobs/${id}/retry`,
+    INGESTION_JOB_ERRORS: (id: string) => `/ingestion-jobs/${id}/errors`,
     INGESTION_JOB_RECORDS: (id: string) => `/ingestion-jobs/${id}/records`,
     INGESTION_JOB_RECORD: (jobId: string, recordId: string) => `/ingestion-jobs/${jobId}/records/${recordId}`,
     RECORDS_BY_STREAM: `/records`,

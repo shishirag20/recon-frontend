@@ -43,6 +43,32 @@ body {
   animation: fadeIn 0.15s ease forwards;
 }
 
+/* Side drawer: the panel is the one authored moment here, so it gets a real
+   expo ease-out rather than the generic 0.15s used for content swaps. */
+@keyframes drawerIn {
+  from { opacity: 0; transform: translateX(28px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.drawer-in {
+  animation: drawerIn 0.26s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes scrimIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.scrim-in {
+  animation: scrimIn 0.2s ease forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fade-in, .drawer-in, .scrim-in {
+    animation-duration: 0.01ms;
+  }
+}
+
 /* ── AR Rules Studio: vertical timeline + accordion ── */
 .tl-wrap {
   position: relative;

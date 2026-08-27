@@ -325,7 +325,6 @@ interface ARRuleCardProps {
   rule: ARRule;
   index: number;
   total: number;
-  matchedCount?: number;
   ruleNumberStr: string;
   isEditing: boolean;
   onToggleEdit: () => void;
@@ -340,7 +339,6 @@ export const ARRuleCard: React.FC<ARRuleCardProps> = ({
   rule,
   index,
   total,
-  matchedCount,
   ruleNumberStr,
   isEditing,
   onToggleEdit,
@@ -435,11 +433,6 @@ export const ARRuleCard: React.FC<ARRuleCardProps> = ({
               <span className="text-slate-400 font-normal">{ruleNumberStr}: </span>
               {rule.name}
             </span>
-            {matchedCount !== undefined && matchedCount > 0 && (
-              <span className="text-[11px] font-medium text-slate-500 font-mono">
-                · {matchedCount} matched
-              </span>
-            )}
           </div>
 
           {/* Description Line */}
@@ -488,7 +481,6 @@ export const ARRuleCard: React.FC<ARRuleCardProps> = ({
       {isEditing && (
         <ARRuleEditor
           rule={draftRule}
-          matchedCount={matchedCount}
           onUpdateRule={setDraftRule}
           definitionId={definitionId}
         />

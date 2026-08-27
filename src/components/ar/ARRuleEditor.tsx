@@ -15,7 +15,6 @@ const FIELD_MATCH_LIKE_KINDS = new Set(['field-match', 'sequential-narration-mat
 
 interface ARRuleEditorProps {
   rule: ARRule;
-  matchedCount?: number;
   onUpdateRule: (updated: ARRule) => void;
   // Scopes the matcher catalog fetch to this definition's entity, so the
   // source/source_field/bank_field pickers include raw:<key> options for
@@ -173,7 +172,6 @@ const formatSecondSourceLabel = (s: string) => {
 
 export const ARRuleEditor: React.FC<ARRuleEditorProps> = ({
   rule,
-  matchedCount = 0,
   onUpdateRule,
   definitionId,
 }) => {
@@ -232,15 +230,6 @@ export const ARRuleEditor: React.FC<ARRuleEditorProps> = ({
 
   return (
     <div className="border-t border-slate-200 px-5 py-4 bg-slate-50/70 flex flex-col gap-4 text-xs fade-in">
-      {/* Live Match Count Banner */}
-      <div className="-mt-0.5 text-[11.5px] text-slate-500 font-medium">
-        Live:{' '}
-        <span className={`font-mono font-semibold ${matchedCount ? 'text-emerald-700' : 'text-slate-400'}`}>
-          {matchedCount} matched
-        </span>{' '}
-        with these settings, in this run
-      </div>
-
       {/* Row 1: MATCHER & RULE NAME */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>

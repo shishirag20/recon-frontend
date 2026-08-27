@@ -81,7 +81,6 @@ export const ARSubPhaseSection: React.FC<ARSubPhaseSectionProps> = ({
               rule={rule}
               index={idx}
               total={rules.length}
-              matchedCount={rule.enabled ? 1 : 0}
               ruleNumberStr={`Rule ${groupPriority}.${ruleNumbers[rule.id] || idx + 1}`}
               isEditing={editingRuleId === rule.id}
               onToggleEdit={() => onToggleEditRule(rule.id)}

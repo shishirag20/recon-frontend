@@ -21,6 +21,7 @@ import type {
   ResolvedHeader,
   ResolveMappingResponse,
   IngestionJobOut,
+  IngestionJobErrorsOut,
   CanonicalRecordOut,
   CanonicalRecordUpdate,
 } from '../types/datahub';
@@ -171,6 +172,20 @@ export const ingestionJobService = {
 
   async retry(jobId: string): Promise<IngestionJobOut> {
     return api.post<IngestionJobOut>(API_ROUTES.DATA_HUB.INGESTION_JOB_RETRY(jobId));
+  },
+
+  /**
+   * Why a job produced errors: its rejected rows grouped by cause, plus the
+   * job-level fatal reason when the file never got far enough to produce rows.
+   *
+   * Deliberately not cached — a PENDING/RUNNING job's errors change as the
+   * worker progresses, and a cached "0 errors" would outlive the truth.
+   */
+  async getErrors(jobId: string, sampleLimit = 3): Promise<IngestionJobErrorsOut> {
+    return api.get<IngestionJobErrorsOut>(
+      API_ROUTES.DATA_HUB.INGESTION_JOB_ERRORS(jobId),
+      { params: { sample_limit: sampleLimit } }
+    );
   },
 };
 

@@ -136,12 +136,77 @@ export interface IngestionJobOut {
   format: string | null;
   status: JobStatus;
   row_count: number;
+  /** Rejected + flagged combined. Prefer the two split counts below when the
+   *  distinction matters — they have different remedies. */
   error_count: number;
+  /** Rows that were never inserted anywhere. Only fixable by correcting the
+   *  source file and re-uploading. */
+  rejected_row_count: number;
+  /** Rows that WERE inserted but carry valid=false. Editable in place from the
+   *  Data Explorer. */
+  flagged_row_count: number;
   attempt_count: number;
   max_attempts: number;
   last_error: string | null;
+  /** File headers that matched no mapping — their values were dropped silently. */
+  unmapped_columns?: string[] | null;
   started_at: string; // ISO DateTime string
+  /** Only present on GET /ingestion-jobs/{id}; the list endpoint omits it
+   *  because it is the largest column on a big upload. */
   failed_rows?: Record<string, unknown>[] | null;
+}
+
+// ── Ingestion Errors ──────────────────────────────────────────────────────────
+
+export interface IngestionErrorSample {
+  /** 1-based data row in the source file, header excluded — so the line number
+   *  in a spreadsheet is this + 1. Null on jobs ingested before it was recorded. */
+  row_number: number | null;
+  raw: Record<string, unknown>;
+  /** Every issue on the row, in order. The last entry is the rejection cause. */
+  issues: string[];
+}
+
+export type IngestionErrorCode =
+  | 'MISSING_REQUIRED_FIELD'
+  | 'TRANSFORM_FAILED'
+  | 'DUPLICATE_ROW'
+  | 'DUPLICATE_KEY'
+  | 'CURRENCY_MISMATCH'
+  | 'INVALID_VALUE'
+  | 'VALUE_TOO_LONG'
+  | 'UNKNOWN_REFERENCE'
+  | 'NUMERIC_OVERFLOW'
+  | 'UNKNOWN_FIELD'
+  | 'OTHER';
+
+export interface IngestionErrorGroup {
+  code: IngestionErrorCode;
+  reason: string;
+  field: string | null;
+  count: number;
+  contributing_issues: string[];
+  samples: IngestionErrorSample[];
+}
+
+export interface IngestionJobErrorsOut {
+  job_id: string;
+  file_name: string | null;
+  stream: IngestionStream | null;
+  status: JobStatus;
+  row_count: number;
+  error_count: number;
+  rejected_row_count: number;
+  flagged_row_count: number;
+  /** Job-level fatal reason: the file never produced rows at all. When set,
+   *  `groups` is normally empty — this is a setup problem, not a data problem. */
+  last_error: string | null;
+  attempt_count: number;
+  max_attempts: number;
+  unmapped_columns: string[] | null;
+  groups: IngestionErrorGroup[];
+  sample_limit: number;
+  groups_truncated: boolean;
 }
 
 // ── Canonical Records (Direct-to-canonical Data Explorer) ─────────────────────
